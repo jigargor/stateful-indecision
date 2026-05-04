@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+
+# Secrets
+.env
+.env.local
+
+# Runtime ledgers and evolving state
+ecosystems/*/*.jsonl
+ecosystems/*/agents/*/constitution.md
+ecosystems/*/agents/*/notebook.jsonl
+ecosystems/*/agents/*/research/

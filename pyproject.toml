@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stateful-indecision"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7,<3",
+    "anthropic>=0.40,<1",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires live LLM API key",
+]
+
+[tool.setuptools]
+packages = ["adapters", "agent", "core", "forums", "infra", "safety", "schemas", "tools", "workload"]
