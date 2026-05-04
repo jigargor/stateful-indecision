@@ -1,18 +1,18 @@
 {
   "config_version": "0.0.3",
   "ecosystem_id": "alpha",
-  "agent_id": "biochem-lead-r2",
-  "model_id": "biochemistry-lead-restart",
-  "model_spec": "mock:biochemistry-lead-restart",
+  "agent_id": "psych-lead",
+  "model_id": "claude-sonnet-4-6-20250514",
+  "model_spec": "mock:psychiatry-lead",
   "max_decisions": 50,
   "seed": null,
-  "constitution_seed_path": "seeds/constitutions/biochemistry_seed.md",
-  "field_list_path": "seeds/fields/biochemistry_fields.json",
+  "constitution_seed_path": "seeds/constitutions/psychiatry_seed.md",
+  "field_list_path": "seeds/fields/psychiatry_fields.json",
   "action_vocabulary_path": "seeds/action_vocabulary.json",
   "executor_templates_path": "agent/executor.py",
-  "constitution_seed_hash": "6feb9ec68d9af5b6070ecd82ecafe58a46fd05a1c7d5bd656c8a82ff43818570",
-  "field_list_hash": "65b807608f3d19e4b4b50a82a821f211193020644c403a4e2eac86cebc071722",
+  "constitution_seed_hash": "538cf9d618fdcb36b4656fb8e5f0ff5b537193379dabecdcae4cfcb1aff2d317",
+  "field_list_hash": "b221a8db3d0cfefc8aacb7037d84e3557a1a56bbad94e7e2570ecdb154df2ab9",
   "action_vocabulary_hash": "7f57496a63a3bee737e32f912ec9ff3eb78b071717d6cbe53f6261fad7c1ad1c",
   "executor_templates_hash": "d866f3b270d9bd4ca54bccd9ffed5459ced4f6db462d2584724a991f5498de18",
-  "knob_changelog": "restart lane after orphaned process; reset to fresh biochemistry lead agent_id and mock model for stable autonomous iteration"
+  "knob_changelog": "psychiatry lead baseline"
 }
