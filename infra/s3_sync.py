@@ -397,6 +397,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-seconds", type=int, default=None)
     args = parser.parse_args(argv)
 
+    from infra.env import load_env
+    load_env(args.base_dir.resolve())
+
     cfg = config_from_env()
     if cfg is None:
         print("S3 offload is disabled (S3_OFFLOAD_ENABLED != 1 or no bucket).")
