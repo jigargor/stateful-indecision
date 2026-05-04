@@ -1,0 +1,30 @@
+{
+  "properties": {
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "ref_decision_id": {
+      "title": "Ref Decision Id",
+      "type": "string"
+    },
+    "fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fingerprint"
+    }
+  },
+  "required": [
+    "text",
+    "ref_decision_id"
+  ],
+  "title": "NotebookPayload",
+  "type": "object"
+}

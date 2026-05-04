@@ -17,6 +17,9 @@ dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
 ]
+s3 = [
+    "boto3>=1.34,<2",
+]
 
 [tool.pytest.ini_options]
 markers = [

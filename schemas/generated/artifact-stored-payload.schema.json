@@ -1,0 +1,33 @@
+{
+  "properties": {
+    "artifact_id": {
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "artifact_path": {
+      "title": "Artifact Path",
+      "type": "string"
+    },
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "config_version": {
+      "title": "Config Version",
+      "type": "string"
+    },
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact_id",
+    "artifact_path",
+    "action",
+    "config_version",
+    "snapshot_id"
+  ],
+  "title": "ArtifactStoredPayload",
+  "type": "object"
+}

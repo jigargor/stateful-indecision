@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import random
+import threading
 import time
 from pathlib import Path
 
@@ -20,6 +21,74 @@ from infra.llm_client import LLMError
 from infra.storage import EcosystemStorage, FirewallError
 from safety.kill_switch import KillSwitchMonitor
 from schemas.events import ActionVocabulary, EventEnvelope
+
+
+def _try_s3_sync(storage: EcosystemStorage, base_dir: Path, run_config: dict | None, mode: str = "once") -> None:
+    """Best-effort S3 sync; never raises."""
+    try:
+        from infra.s3_sync import S3SyncConfig, config_from_env, sync_ecosystem_once
+
+        cfg = config_from_env()
+        if cfg is None:
+            if run_config and isinstance(run_config.get("s3_offload"), dict):
+                offload = run_config["s3_offload"]
+                if not offload.get("enabled", False):
+                    return
+                bucket = str(offload.get("bucket", ""))
+                if not bucket:
+                    return
+                cfg = S3SyncConfig(
+                    bucket=bucket,
+                    prefix=str(offload.get("prefix", "")),
+                    region=os.environ.get("AWS_REGION"),
+                    sync_interval_sec=int(offload.get("sync_interval_sec", 300)),
+                    research_mode=str(offload.get("research_mode", "bundle")),
+                )
+            else:
+                return
+
+        state_path = Path(
+            os.environ.get(
+                "S3_STATE_PATH",
+                str(base_dir / ".sync_state" / f"{storage.ecosystem_id}.json"),
+            )
+        )
+        sync_ecosystem_once(storage, cfg, state_path=state_path, mode=mode)
+    except ImportError:
+        pass
+    except Exception as exc:
+        print(f"[s3_sync] {mode} sync failed: {exc}")
+
+
+class _PeriodicSyncThread:
+    """Background thread that runs S3 sync on a configurable interval."""
+
+    def __init__(
+        self,
+        storage: EcosystemStorage,
+        base_dir: Path,
+        run_config: dict | None,
+        interval_sec: int = 300,
+    ):
+        self._storage = storage
+        self._base_dir = base_dir
+        self._run_config = run_config
+        self._interval = interval_sec
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="s3-periodic-sync")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(timeout=self._interval):
+            _try_s3_sync(self._storage, self._base_dir, self._run_config, mode="periodic")
 
 
 def _count_full_ledger_actions(ledger_path: Path, agent_id: str) -> dict[str, int]:
@@ -87,6 +156,19 @@ def _load_field_list_from_file(path: Path) -> list[str]:
     return data
 
 
+def _load_prompt_pack(path: Path) -> dict[str, object]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("prompt pack must be a JSON object")
+    roles = data.get("roles")
+    if not isinstance(roles, dict):
+        raise ValueError("prompt pack must include a 'roles' object")
+    shared = data.get("shared")
+    if shared is not None and not isinstance(shared, dict):
+        raise ValueError("prompt pack 'shared' must be an object when present")
+    return data
+
+
 def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, object], dict[str, Path], Path] | None:
     if not config_path:
         return None
@@ -120,6 +202,9 @@ def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, 
             "agent/executor.py",
         ),
     }
+    prompt_pack_path_value = str(config.get("prompt_pack_path", "")).strip()
+    if prompt_pack_path_value:
+        paths["prompt_pack_path"] = _resolve_path(base_dir, prompt_pack_path_value, prompt_pack_path_value)
 
     expected_hashes = {
         "constitution_seed_hash": _sha256_file(paths["constitution_seed_path"]),
@@ -127,6 +212,8 @@ def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, 
         "action_vocabulary_hash": _sha256_file(paths["action_vocabulary_path"]),
         "executor_templates_hash": _sha256_file(paths["executor_templates_path"]),
     }
+    if "prompt_pack_path" in paths:
+        expected_hashes["prompt_pack_hash"] = _sha256_file(paths["prompt_pack_path"])
     for hash_key, actual_hash in expected_hashes.items():
         expected = config.get(hash_key)
         if expected and expected != actual_hash:
@@ -137,6 +224,8 @@ def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, 
     config.setdefault("field_list_path", str(paths["field_list_path"].relative_to(base_dir)))
     config.setdefault("action_vocabulary_path", str(paths["action_vocabulary_path"].relative_to(base_dir)))
     config.setdefault("executor_templates_path", str(paths["executor_templates_path"].relative_to(base_dir)))
+    if "prompt_pack_path" in paths:
+        config.setdefault("prompt_pack_path", str(paths["prompt_pack_path"].relative_to(base_dir)))
     return config, paths, resolved_config_path
 
 
@@ -188,6 +277,9 @@ def _log_run_summary(
     }
     if run_config is not None:
         payload["run_config_version"] = run_config.get("config_version")
+        payload["gamma"] = run_config.get("discount_gamma", 0.99)
+        payload["horizon_T"] = run_config.get("horizon_T", decisions_completed)
+        payload["reward_mode"] = run_config.get("reward_mode", "sparse")
         payload["run_config"] = run_config
     public_writer.append("run.completed", payload, ecosystem_id=ecosystem_id, agent_id=agent_id)
 
@@ -291,8 +383,21 @@ def _run_inner(
     llm: LLMAdapter = create_adapter_auto(llm_model_spec)
 
     vocab = ActionVocabulary.load(action_vocabulary_path)
-    policy = Policy(vocab)
-    state_builder = StateBuilder(storage, agent_id)
+    blocked_leaves = set()
+    if run_config is not None:
+        blocked_leaves = set(str(leaf) for leaf in run_config.get("blocked_leaf_actions", []) if str(leaf).strip())
+    policy = Policy(vocab, blocked_leaves=blocked_leaves)
+    recent_events_cap = 20
+    recent_notebook_cap = 5
+    if run_config is not None:
+        recent_events_cap = int(run_config.get("memory_recent_events_cap", recent_events_cap))
+        recent_notebook_cap = int(run_config.get("memory_recent_notebook_cap", recent_notebook_cap))
+    state_builder = StateBuilder(
+        storage,
+        agent_id,
+        recent_events_cap=recent_events_cap,
+        recent_notebook_cap=recent_notebook_cap,
+    )
     executor = Executor(
         llm=llm,
         storage=storage,
@@ -302,10 +407,41 @@ def _run_inner(
         zotero_api_key=os.getenv("ZOTERO_API_KEY"),
         zotero_library_id=os.getenv("ZOTERO_LIBRARY_ID"),
         config_version=str(run_config.get("config_version")) if run_config is not None else "unversioned",
+        tool_allowlist=(
+            set(str(tool) for tool in run_config.get("tool_allowlist", []))
+            if run_config is not None and isinstance(run_config.get("tool_allowlist"), list)
+            else None
+        ),
+        emit_latent_reasoning_events=(
+            bool(run_config.get("emit_latent_reasoning_events", False))
+            if run_config is not None
+            else False
+        ),
+        prompt_pack=(
+            _load_prompt_pack(run_config_paths["prompt_pack_path"])
+            if run_config_paths is not None and "prompt_pack_path" in run_config_paths
+            else None
+        ),
     )
     constitution = ConstitutionManager(storage, agent_id)
-    monitor = KillSwitchMonitor(base_dir / "safety" / "kill_switch_rubric.md", eval_writer)
+    monitor = KillSwitchMonitor(
+        base_dir / "safety" / "kill_switch_rubric.md",
+        eval_writer,
+        mode=str(run_config.get("verifier_mode", "warn")) if run_config is not None else "warn",
+        reward_mode=str(run_config.get("reward_mode", "sparse")) if run_config is not None else "sparse",
+    )
     monitor.arm(agent_id=agent_id, rubric_version="0.1.0")
+
+    s3_sync_interval = 300
+    if run_config is not None:
+        offload = run_config.get("s3_offload")
+        if isinstance(offload, dict):
+            s3_sync_interval = int(offload.get("sync_interval_sec", 300))
+    if os.environ.get("S3_SYNC_INTERVAL_SEC"):
+        s3_sync_interval = int(os.environ["S3_SYNC_INTERVAL_SEC"])
+
+    periodic_sync = _PeriodicSyncThread(storage, base_dir, run_config, interval_sec=s3_sync_interval)
+    periodic_sync.start()
 
     run_seed = seed if seed is not None else int(time.time())
     rng = random.Random(run_seed)
@@ -377,6 +513,11 @@ def _run_inner(
                 agent_id=agent_id,
                 ecosystem_id=ecosystem_id,
                 rng=rng,
+                enable_pi_reason_then_action=(
+                    bool(run_config.get("enable_pi_reason_then_action", False))
+                    if run_config is not None
+                    else False
+                ),
             )
             key = f"{result.top_action}/{result.sub_action}"
             action_tally[key] = action_tally.get(key, 0) + 1
@@ -413,12 +554,29 @@ def _run_inner(
             artifacts_stored=storage.count_artifacts(agent_id),
             run_config=run_config,
         )
+        monitor.evaluate(
+            EventEnvelope(
+                schema_version="0.1.0",
+                event_id="heartbeat-run-completed",
+                event_type="agent.run.completed",
+                ecosystem_id=ecosystem_id,
+                agent_id=agent_id,
+                wall_time="1970-01-01T00:00:00.000000Z",
+                monotonic_ns=0,
+                payload={"decisions_completed": max_decisions},
+                prev_hash="0" * 64,
+                record_hash="0" * 64,
+            )
+        )
 
         if run_config is not None and run_config_file is not None:
             run_config["config_version"] = _bump_patch(str(run_config["config_version"]))
             run_config_file.write_text(json.dumps(run_config, indent=2) + "\n", encoding="utf-8")
             if verbose:
                 print(f"  next config_version: {run_config['config_version']}")
+
+        periodic_sync.stop()
+        _try_s3_sync(storage, base_dir, run_config, mode="final")
 
         if verbose:
             print("=== run complete ===")
@@ -429,6 +587,8 @@ def _run_inner(
             print()
 
     except KeyboardInterrupt:
+        periodic_sync.stop()
+        _try_s3_sync(storage, base_dir, run_config, mode="shutdown")
         public_writer.append(
             "agent.shutdown",
             {"reason": "user_interrupt", "decisions_completed": max_decisions},
@@ -437,6 +597,8 @@ def _run_inner(
         )
         return
     except LLMError as exc:
+        periodic_sync.stop()
+        _try_s3_sync(storage, base_dir, run_config, mode="shutdown")
         public_writer.append(
             "agent.error",
             {"error_type": "LLMError", "message": str(exc), "decision_number": max_decisions},
@@ -445,6 +607,8 @@ def _run_inner(
         )
         raise SystemExit(1) from exc
     except ChainCorruptionError as exc:
+        periodic_sync.stop()
         raise SystemExit(2) from exc
     except FirewallError as exc:
+        periodic_sync.stop()
         raise SystemExit(3) from exc

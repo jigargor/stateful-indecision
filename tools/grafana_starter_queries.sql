@@ -128,3 +128,33 @@ LEFT JOIN skill_counts sk ON sk.ecosystem_id = d.ecosystem_id
 LEFT JOIN notebook_stats n ON n.ecosystem_id = d.ecosystem_id
 WHERE d.ecosystem_id IN ('alpha', 'beta')
 ORDER BY d.ecosystem_id;
+
+
+-- 8) Decision latency and token metrics (for p50/p95 panels)
+-- Note: percentile functions are not native in SQLite; use this base query and
+-- compute p50/p95 in Grafana transformations.
+SELECT
+  ecosystem_id,
+  agent_id,
+  wall_time,
+  CAST(json_extract(payload_json, '$.metrics.wall_end_ms') AS REAL)
+    - CAST(json_extract(payload_json, '$.metrics.wall_start_ms') AS REAL) AS latency_ms,
+  CAST(json_extract(payload_json, '$.metrics.tokens_in') AS INTEGER) AS tokens_in,
+  CAST(json_extract(payload_json, '$.metrics.tokens_out') AS INTEGER) AS tokens_out,
+  CAST(json_extract(payload_json, '$.metrics.tokens_in') AS INTEGER)
+    + CAST(json_extract(payload_json, '$.metrics.tokens_out') AS INTEGER) AS tokens_total
+FROM events
+WHERE event_type = 'action.executed'
+ORDER BY wall_time;
+
+
+-- 9) Stop reason distribution by ecosystem and agent
+SELECT
+  ecosystem_id,
+  agent_id,
+  json_extract(payload_json, '$.metrics.stop_reason') AS stop_reason,
+  COUNT(*) AS event_count
+FROM events
+WHERE event_type = 'action.executed'
+GROUP BY ecosystem_id, agent_id, stop_reason
+ORDER BY ecosystem_id, agent_id, event_count DESC;

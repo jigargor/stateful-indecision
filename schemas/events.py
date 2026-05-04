@@ -57,6 +57,7 @@ class ActionExecutedPayload(BaseModel):
 class NotebookPayload(BaseModel):
     text: str
     ref_decision_id: str
+    fingerprint: str | None = None
 
 
 class ConstitutionRevisedPayload(BaseModel):
@@ -71,6 +72,34 @@ class ArtifactStoredPayload(BaseModel):
     action: str
     config_version: str
     snapshot_id: str
+
+
+class AgentStateSnapshottedPayload(BaseModel):
+    snapshot_id: str
+    field_chosen: str | None = None
+    in_commons: bool
+    recent_event_count: int
+    recent_notebook_count: int
+    embedding_blob_ref: str | None = None
+    belief_state: dict[str, float] = Field(default_factory=dict)
+
+
+class AnalyzeStructuredOutput(BaseModel):
+    assumptions: list[str] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+    structural_weaknesses: list[str] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    target_doi: str | None = None
+    summary: str | None = None
+
+
+class AnnotateStructuredOutput(BaseModel):
+    title: str | None = None
+    doi: str | None = None
+    notes: str | None = None
+    uncertainties: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    zotero_item_key: str | None = None
 
 
 class ActionVocabulary(BaseModel):

@@ -18,6 +18,13 @@ from infra.storage import EcosystemStorage
 from workload.scite import SciteClient
 from workload.web_alpha import WebAlpha
 from workload.zotero import ZoteroClient
+from pydantic import ValidationError
+from schemas.events import (
+    AnalyzeStructuredOutput,
+    AnnotateStructuredOutput,
+    ArtifactStoredPayload,
+    ConstitutionRevisedPayload,
+)
 
 
 ACTION_TEMPLATES: dict[str, dict[str, str]] = {
@@ -66,6 +73,20 @@ ACTION_TEMPLATES: dict[str, dict[str, str]] = {
     },
 }
 
+SUB_ACTION_ROLE_MAP: dict[str, str] = {
+    "ORCHESTRATE": "research_lead",
+    "DISCOVER": "assistant_researcher",
+    "READ": "assistant_researcher",
+    "ANALYZE": "assistant_researcher",
+    "ANNOTATE": "assistant_researcher",
+    "WRITE": "assistant_researcher",
+    "EXPERIMENT": "assistant_researcher",
+    "CHALLENGE": "checker",
+    "CRITIQUE_IDEA": "checker",
+}
+
+REFLECTION_SUB_ACTIONS = {"THINK_DEEPLY", "DEEP_PATTERN_RECOGNITION"}
+
 
 @dataclass
 class ExecutionResult:
@@ -87,6 +108,9 @@ class Executor:
         zotero_api_key: str | None = None,
         zotero_library_id: str | None = None,
         config_version: str = "unversioned",
+        tool_allowlist: set[str] | None = None,
+        emit_latent_reasoning_events: bool = False,
+        prompt_pack: dict[str, object] | None = None,
     ):
         self.llm = llm
         self.storage = storage
@@ -94,6 +118,9 @@ class Executor:
         self.config_version = config_version
         self.scite = SciteClient(api_key=scite_api_key, partner_key=scite_partner_key)
         self.zotero = ZoteroClient(api_key=zotero_api_key, library_id=zotero_library_id)
+        self.tool_allowlist = tool_allowlist
+        self.emit_latent_reasoning_events = emit_latent_reasoning_events
+        self.prompt_pack = prompt_pack
 
     def execute(
         self,
@@ -111,6 +138,11 @@ class Executor:
             f"--- CONSTITUTION ---\n{snapshot.constitution_text}\n--- END CONSTITUTION ---"
         )
         prompt = ACTION_TEMPLATES[top_action][sub_action]
+        team_system, team_instruction = self._resolve_team_prompt(sub_action=sub_action)
+        if team_system:
+            system = f"{system}\n\n--- TEAM ROLE PROTOCOL ---\n{team_system}\n--- END TEAM ROLE PROTOCOL ---"
+        if team_instruction:
+            prompt = f"{prompt}\n\nAdditional team protocol:\n{team_instruction}"
         messages = [
             {
                 "role": "user",
@@ -118,13 +150,18 @@ class Executor:
                     f"Action: {top_action}/{sub_action}\n"
                     f"Field: {snapshot.field_chosen}\n"
                     f"Recent notebook ({len(snapshot.recent_notebook)} entries): {snapshot.recent_notebook}\n"
+                    f"Notebook summary: {snapshot.recent_notebook_summary}\n"
                     f"Instruction: {prompt}"
                 ),
             }
         ]
         llm_response = self.llm.complete(system=system, messages=messages)
         raw_output = llm_response.text
-        structured = self._parse_structured(sub_action, raw_output)
+        structured, raw_output = self._parse_structured_with_retry(
+            sub_action=sub_action,
+            raw_output=raw_output,
+            system=system,
+        )
         side_effects: list[str] = []
 
         public_writer = writers["public"]
@@ -138,35 +175,84 @@ class Executor:
             scite=self.scite,
             zotero=self.zotero,
         )
+        if self.emit_latent_reasoning_events:
+            public_writer.append(
+                "agent.latent.reasoned",
+                {
+                    "phase": "post_generation",
+                    "top_action": top_action,
+                    "sub_action": sub_action,
+                    "structured_candidate": sub_action in {"ANALYZE", "ANNOTATE"},
+                    "raw_output_preview": raw_output[:200],
+                },
+                ecosystem_id=self.storage.ecosystem_id,
+                agent_id=self.agent_id,
+            )
 
         if sub_action == "DISCOVER":
             query = self._research_query(snapshot)
-            results = web_alpha.search(query)
-            side_effects.extend(["web.search.requested", "web.search.results.received"])
+            results = []
+            tool_plan = self._dependency_aware_tool_plan(sub_action, query=query)
+            if "web.search" in tool_plan and self._tool_allowed("web.search"):
+                results = web_alpha.search(query)
+                side_effects.extend(["web.search.requested", "web.search.results.received"])
+            else:
+                side_effects.append("tool.blocked:web.search")
             if results:
                 raw_output += f"\nTop discovery: {results[0].get('title', 'unknown')}"
         elif sub_action == "READ":
             query = self._research_query(snapshot)
-            results = web_alpha.search(query)
+            tool_plan = self._dependency_aware_tool_plan(sub_action, query=query)
+            results = (
+                web_alpha.search(query)
+                if "web.search" in tool_plan and self._tool_allowed("web.search")
+                else []
+            )
             if results:
                 doc_id = str(results[0].get("doc_id", ""))
                 if doc_id:
-                    web_alpha.fetch(doc_id)
+                    if "web.fetch" in tool_plan and self._tool_allowed("web.fetch"):
+                        web_alpha.fetch(doc_id)
+                    else:
+                        side_effects.append("tool.blocked:web.fetch")
                 side_effects.extend(["web.search.requested", "web.search.results.received"])
-                side_effects.extend(["web.fetch.requested", "web.fetch.received"])
+                if self._tool_allowed("web.fetch"):
+                    side_effects.extend(["web.fetch.requested", "web.fetch.received"])
         elif sub_action == "ANALYZE":
             query = self._research_query(snapshot)
-            results = web_alpha.search(query)
-            side_effects.extend(["web.search.requested", "web.search.results.received"])
+            tool_plan = self._dependency_aware_tool_plan(sub_action, query=query)
+            results = (
+                web_alpha.search(query)
+                if "web.search" in tool_plan and self._tool_allowed("web.search")
+                else []
+            )
+            if "web.search" in tool_plan and self._tool_allowed("web.search"):
+                side_effects.extend(["web.search.requested", "web.search.results.received"])
+            else:
+                side_effects.append("tool.blocked:web.search")
             if results:
                 doi = str(results[0].get("doc_id", ""))
-                citations = web_alpha.citations(doi)
+                citations = (
+                    web_alpha.citations(doi)
+                    if "scite.citations" in tool_plan and self._tool_allowed("scite.citations")
+                    else []
+                )
+                if "scite.citations" not in tool_plan or not self._tool_allowed("scite.citations"):
+                    side_effects.append("tool.blocked:scite.citations")
                 if structured is None:
                     structured = {}
                 structured["citations"] = citations
                 structured["target_doi"] = doi
                 raw_output += f"\nAnalyzed citation context entries: {len(citations)}"
         elif sub_action == "ANNOTATE":
+            if structured and "_validation_failure" in structured:
+                # Explicitly reject catalog side effects on invalid structured payloads.
+                return ExecutionResult(
+                    raw_output=raw_output,
+                    structured=structured,
+                    llm_response=llm_response,
+                    side_effects=side_effects + ["executor.structured.validation_failed"],
+                )
             if structured is None:
                 structured = {"text": raw_output}
             doi = str(structured.get("doi", "")).strip()
@@ -174,13 +260,22 @@ class Executor:
             notes = str(structured.get("notes", "")).strip() or raw_output[:500]
             if not doi:
                 query = self._research_query(snapshot)
-                results = web_alpha.search(query)
-                side_effects.extend(["web.search.requested", "web.search.results.received"])
+                results = web_alpha.search(query) if self._tool_allowed("web.search") else []
+                if self._tool_allowed("web.search"):
+                    side_effects.extend(["web.search.requested", "web.search.results.received"])
+                else:
+                    side_effects.append("tool.blocked:web.search")
                 if results:
                     doi = str(results[0].get("doc_id", "")).strip()
                     title = str(results[0].get("title", title)).strip() or title
             if doi:
-                item_key = web_alpha.catalog(title=title, doi=doi, notes=notes, tags=[snapshot.field_chosen or "alpha"])
+                item_key = (
+                    web_alpha.catalog(title=title, doi=doi, notes=notes, tags=[snapshot.field_chosen or "alpha"])
+                    if self._tool_allowed("zotero.catalog")
+                    else None
+                )
+                if not self._tool_allowed("zotero.catalog"):
+                    side_effects.append("tool.blocked:zotero.catalog")
                 if item_key:
                     structured["zotero_item_key"] = item_key
                     raw_output += f"\nCataloged in Zotero with key: {item_key}"
@@ -223,13 +318,14 @@ class Executor:
             amendment = self._extract_amendment(raw_output)
             if amendment:
                 revision_diff = constitution.append_revision(amendment, snapshot.snapshot_id)
+                revised_payload = ConstitutionRevisedPayload(
+                    source_event_id=snapshot.snapshot_id,
+                    amendment_text=amendment,
+                    revision_diff=revision_diff,
+                ).model_dump()
                 public_writer.append(
                     "agent.constitution.revised",
-                    {
-                        "source_event_id": snapshot.snapshot_id,
-                        "amendment_text": amendment,
-                        "revision_diff": revision_diff,
-                    },
+                    revised_payload,
                     ecosystem_id=self.storage.ecosystem_id,
                     agent_id=self.agent_id,
                 )
@@ -279,15 +375,16 @@ class Executor:
                 structured=structured,
             )
             event_type = "agent.skill.authored" if is_skill else "agent.artifact.stored"
+            artifact_payload = ArtifactStoredPayload(
+                artifact_id=artifact_id,
+                artifact_path=artifact_path,
+                action=f"{top_action}/{sub_action}",
+                config_version=self.config_version,
+                snapshot_id=snapshot.snapshot_id,
+            ).model_dump()
             public_writer.append(
                 event_type,
-                {
-                    "artifact_id": artifact_id,
-                    "artifact_path": artifact_path,
-                    "action": f"{top_action}/{sub_action}",
-                    "config_version": self.config_version,
-                    "snapshot_id": snapshot.snapshot_id,
-                },
+                artifact_payload,
                 ecosystem_id=self.storage.ecosystem_id,
                 agent_id=self.agent_id,
             )
@@ -300,14 +397,64 @@ class Executor:
             side_effects=side_effects,
         )
 
-    @staticmethod
-    def _parse_structured(sub_action: str, raw_output: str) -> dict | None:
+    def _parse_structured_with_retry(
+        self,
+        *,
+        sub_action: str,
+        raw_output: str,
+        system: str,
+    ) -> tuple[dict | None, str]:
         if sub_action not in {"ANALYZE", "ANNOTATE"}:
+            return None, raw_output
+        structured = self._parse_and_validate_structured(sub_action, raw_output)
+        if structured is not None:
+            return structured, raw_output
+        repair_response = self.llm.complete(
+            system=system,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Rewrite the following response as a single valid JSON object only. "
+                        "Do not include markdown fences, prose, or commentary.\n\n"
+                        f"{raw_output}"
+                    ),
+                }
+            ],
+            max_tokens=2048,
+            temperature=0.0,
+        )
+        repaired_output = repair_response.text
+        repaired_structured = self._parse_and_validate_structured(sub_action, repaired_output)
+        if repaired_structured is not None:
+            return repaired_structured, repaired_output
+        return (
+            {
+                "_validation_failure": {
+                    "sub_action": sub_action,
+                    "reason": "invalid_structured_output_after_retry",
+                },
+                "text": raw_output,
+            },
+            raw_output,
+        )
+
+    @staticmethod
+    def _parse_and_validate_structured(sub_action: str, raw_output: str) -> dict | None:
+        try:
+            parsed = json.loads(raw_output)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(parsed, dict):
             return None
         try:
-            return json.loads(raw_output)
-        except json.JSONDecodeError:
-            return {"text": raw_output}
+            if sub_action == "ANALYZE":
+                return AnalyzeStructuredOutput.model_validate(parsed).model_dump()
+            if sub_action == "ANNOTATE":
+                return AnnotateStructuredOutput.model_validate(parsed).model_dump()
+        except ValidationError:
+            return None
+        return parsed
 
     @staticmethod
     def _extract_amendment(raw_output: str) -> str | None:
@@ -357,6 +504,50 @@ class Executor:
         artifact_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         relative = artifact_path.relative_to(self.storage.base_dir).as_posix()
         return artifact_id, relative
+
+    def _tool_allowed(self, tool_name: str) -> bool:
+        if self.tool_allowlist is None:
+            return True
+        return tool_name in self.tool_allowlist
+
+    @staticmethod
+    def _dependency_aware_tool_plan(sub_action: str, *, query: str) -> list[str]:
+        _ = query
+        # Sketch: represent tool dependencies explicitly so future executor versions
+        # can batch independent operations while preserving dependency order.
+        plans = {
+            "DISCOVER": ["web.search"],
+            "READ": ["web.search", "web.fetch"],
+            "ANALYZE": ["web.search", "scite.citations"],
+            "ANNOTATE": ["web.search", "zotero.catalog"],
+        }
+        return plans.get(sub_action, [])
+
+    def _resolve_team_prompt(self, *, sub_action: str) -> tuple[str | None, str | None]:
+        if self.prompt_pack is None:
+            return None, None
+        roles = self.prompt_pack.get("roles")
+        if not isinstance(roles, dict):
+            return None, None
+        shared = self.prompt_pack.get("shared")
+        shared_dict = shared if isinstance(shared, dict) else {}
+
+        role_name = SUB_ACTION_ROLE_MAP.get(sub_action)
+        role_system = None
+        if role_name:
+            role_entry = roles.get(role_name)
+            if isinstance(role_entry, dict):
+                candidate = role_entry.get("system_prompt")
+                if isinstance(candidate, str) and candidate.strip():
+                    role_system = candidate.strip()
+
+        reflection_instruction = None
+        if sub_action in REFLECTION_SUB_ACTIONS:
+            candidate = shared_dict.get("post_cycle_reflection_prompt")
+            if isinstance(candidate, str) and candidate.strip():
+                reflection_instruction = candidate.strip()
+
+        return role_system, reflection_instruction
 
     def _fallback_corpus(self):
         from workload.corpus_alpha import CorpusAlpha

@@ -108,6 +108,31 @@ class EcosystemStorage:
             if lock_path.exists():
                 lock_path.unlink()
 
+    def syncable_ledger_paths(self) -> list[Path]:
+        """Fixed set of ecosystem-level JSONL surfaces eligible for S3 sync."""
+        return [
+            self.public_ledger(),
+            self.evaluation_ledger(),
+            self.commons_ledger(),
+            self.roundtable_ledger(),
+            self.townhall_ledger(),
+        ]
+
+    def iter_agent_ids(self) -> list[str]:
+        """List agent subdirectory names sorted alphabetically."""
+        agents_root = self.ecosystem_dir / "agents"
+        if not agents_root.is_dir():
+            return []
+        return sorted(p.name for p in agents_root.iterdir() if p.is_dir())
+
+    def agent_sync_paths(self, agent_id: str) -> dict[str, Path]:
+        """Return paths for an agent's syncable data surfaces."""
+        return {
+            "notebook": self.agent_notebook(agent_id),
+            "constitution": self.agent_constitution(agent_id),
+            "research_dir": self.agent_research_dir(agent_id),
+        }
+
     @staticmethod
     def blocked_for_agent() -> set[str]:
         return {"evaluation.jsonl"}

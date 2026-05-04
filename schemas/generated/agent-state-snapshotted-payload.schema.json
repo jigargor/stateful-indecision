@@ -1,0 +1,59 @@
+{
+  "properties": {
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "field_chosen": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Field Chosen"
+    },
+    "in_commons": {
+      "title": "In Commons",
+      "type": "boolean"
+    },
+    "recent_event_count": {
+      "title": "Recent Event Count",
+      "type": "integer"
+    },
+    "recent_notebook_count": {
+      "title": "Recent Notebook Count",
+      "type": "integer"
+    },
+    "embedding_blob_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Blob Ref"
+    },
+    "belief_state": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Belief State",
+      "type": "object"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "in_commons",
+    "recent_event_count",
+    "recent_notebook_count"
+  ],
+  "title": "AgentStateSnapshottedPayload",
+  "type": "object"
+}

@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from core.writer import ChainWriter
-from schemas.events import EventEnvelope
+from schemas.events import EventEnvelope, NotebookPayload
 
 
 class Notebook:
@@ -17,9 +17,14 @@ class Notebook:
         fingerprint = hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
         if fingerprint in self._existing_fingerprints():
             return None
+        payload = NotebookPayload(
+            text=text,
+            ref_decision_id=ref_decision_id,
+            fingerprint=fingerprint,
+        ).model_dump()
         return self.writer.append(
             "agent.notebook.appended",
-            {"text": text, "ref_decision_id": ref_decision_id, "fingerprint": fingerprint},
+            payload,
             ecosystem_id=self.ecosystem_id,
             agent_id=self.agent_id,
         )

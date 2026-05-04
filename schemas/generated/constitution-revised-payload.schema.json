@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "source_event_id": {
+      "title": "Source Event Id",
+      "type": "string"
+    },
+    "amendment_text": {
+      "title": "Amendment Text",
+      "type": "string"
+    },
+    "revision_diff": {
+      "title": "Revision Diff",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_event_id",
+    "amendment_text",
+    "revision_diff"
+  ],
+  "title": "ConstitutionRevisedPayload",
+  "type": "object"
+}

@@ -1,0 +1,48 @@
+{
+  "properties": {
+    "top_action": {
+      "title": "Top Action",
+      "type": "string"
+    },
+    "sub_action": {
+      "title": "Sub Action",
+      "type": "string"
+    },
+    "raw_output": {
+      "title": "Raw Output",
+      "type": "string"
+    },
+    "structured": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Structured"
+    },
+    "side_effects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Side Effects",
+      "type": "array"
+    },
+    "metrics": {
+      "additionalProperties": true,
+      "title": "Metrics",
+      "type": "object"
+    }
+  },
+  "required": [
+    "top_action",
+    "sub_action",
+    "raw_output"
+  ],
+  "title": "ActionExecutedPayload",
+  "type": "object"
+}

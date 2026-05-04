@@ -1,6 +1,21 @@
 # Auton paper ↔ this codebase
 
-**Reference:** [The Auton Agentic AI Framework](https://arxiv.org/abs/2602.23720) (arXiv:2602.23720v1). Below, headings mirror the whitepaper’s major sections. Each block has a **short summary**, **where this repo stands**, and **action items** (implementation / documentation).
+**Reference:** [The Auton Agentic AI Framework](https://arxiv.org/abs/2602.23720) (arXiv:2602.23720v1).  
+**Pinned paper version for this plan:** **v1**.  
+Below, headings mirror the whitepaper’s major sections. Each block has a **short summary**, **where this repo stands**, and **action items** (implementation / documentation).
+
+---
+
+## Implementation Progress Scoreboard
+
+| Wave | Scope | Status | Notes |
+|---|---|---|---|
+| Wave 0 | Artiforge foundation + stabilization | Completed with fallback | Artiforge tooling returned empty runtime errors; manual fallback logged in wave scorecard. |
+| Wave 1 | Contracts and blueprint | Completed | Payload validation, structured output retry/validation, schema export, hash check and sync tooling added. |
+| Wave 2 | Memory windows and consolidation | Completed | Run-config memory caps, STM/LTM docs, rolling notebook summary, consolidation utility added. |
+| Wave 3 | Safety and governance | Completed | Hard action masks, allowlist controls, verifier hooks, kill-switch pass/warn/fail emission added. |
+| Wave 4 | Observability and evolution | Completed | Grafana SQL extensions and trajectory export tool added. |
+| Wave 5 | Formalism and integration | Completed | Sequence/layering diagrams, named phases, latent reasoning flag path, and pi_reason->pi_action runtime flag path added. |
 
 ---
 
@@ -12,8 +27,8 @@
 
 ### Action items
 
-- [ ] One cross-link in the root **README** (or `AGENTS.md` if present): blueprint vs runtime + arXiv pointer.  
-- [ ] Pin **paper version** (v1) in this doc when the PDF/HTML changes.
+- [x] One cross-link in the root **README** (or `AGENTS.md` if present): blueprint vs runtime + arXiv pointer.  
+- [x] Pin **paper version** (v1) in this doc when the PDF/HTML changes.
 
 ---
 
@@ -25,8 +40,8 @@
 
 ### Action items
 
-- [ ] Tighten **output validation** on executor structured payloads (retry or reject before ledger write).  
-- [ ] Document **failure modes** when the model violates schema (today’s glue path).
+- [x] Tighten **output validation** on executor structured payloads (retry or reject before ledger write).  
+- [x] Document **failure modes** when the model violates schema (today’s glue path).
 
 ---
 
@@ -38,9 +53,9 @@
 
 ### Action items
 
-- [ ] Add a **one-line mapping table** in README: AgenticFormat concept → our file(s).  
-- [ ] Keep **hash fields** in run configs in sync with seeds (`action_vocabulary_hash`, etc.); optional CI check.  
-- [ ] Optional: **JSON Schema** (or Pydantic) export for one representative agent output type as a template for stricter contracts.
+- [x] Add a **one-line mapping table** in README: AgenticFormat concept → our file(s).  
+- [x] Keep **hash fields** in run configs in sync with seeds (`action_vocabulary_hash`, etc.); optional CI check.  
+- [x] Optional: **JSON Schema** (or Pydantic) export for one representative agent output type as a template for stricter contracts.
 
 ### Quick lookup: Auton concept → repo
 
@@ -51,6 +66,7 @@
 | Constraint manifold (preview) | Finite vocabulary + event schemas + verifier |
 | Cognitive persistence | `notebook.jsonl`, constitution, research dirs |
 | Observability | JSONL events, `tools/analyze_run.py`, export/Grafana starters |
+| Belief / snapshot | `agent/state_builder.py` (`belief_state`), `agent/decision.py` |
 
 ---
 
@@ -69,15 +85,29 @@
 
 **End-to-end step:** **m**_t_ ← `build()` → π(**a** | **m**_t_) → execute (internal **z**) → environment → **m**_t+1_.
 
+### Sequence diagram (runtime)
+
+```mermaid
+flowchart TD
+    stateBuilder[StateBuilder.build]
+    policyPropose[Policy.propose]
+    policySample[sample]
+    executorRun[Executor.execute]
+    ledgerCommit[ChainWriter.append events]
+    nextSnapshot[Next step snapshot]
+
+    stateBuilder --> policyPropose --> policySample --> executorRun --> ledgerCommit --> nextSnapshot
+```
+
 ### Action items
 
-- [ ] **Sequence diagram** (mermaid): snapshot → policy → writes → next snapshot (here or `agent/decision.py` docstring).  
-- [ ] **Window sizes** configurable or documented (tie to approximate-Markov gap).  
-- [ ] Optional **`agent.latent.reasoned`** events (no side effects) to separate **Z** from **A** in logs.  
-- [ ] Optional **named phases** in `decision.step` for π_reason → π_action experiments.  
-- [ ] **π_reason then π_action** behind a runtime flag (scratch **z**, then sample **a**).  
-- [ ] **Belief spike:** explicit **b(s)** or particles vs deterministic **f(H)**.  
-- [ ] Plumb **γ**, **T**, and sparse/dense **R** from config + verifiers when ready.
+- [x] **Sequence diagram** (mermaid): snapshot → policy → writes → next snapshot (here or `agent/decision.py` docstring).  
+- [x] **Window sizes** configurable or documented (tie to approximate-Markov gap).  
+- [x] Optional **`agent.latent.reasoned`** events (no side effects) to separate **Z** from **A** in logs.  
+- [x] Optional **named phases** in `decision.step` for π_reason → π_action experiments.  
+- [x] **π_reason then π_action** behind a runtime flag (scratch **z**, then sample **a**).  
+- [x] **Belief spike:** explicit **b(s)** or particles vs deterministic **f(H)**.  
+- [x] Plumb **γ**, **T**, and sparse/dense **R** from config + verifiers when ready.
 
 ---
 
@@ -89,10 +119,10 @@
 
 ### Action items
 
-- [ ] Document **STM vs LTM** boundaries explicitly (which paths are “ephemeral window” vs “durable”).  
-- [ ] Optional **consolidation** job: compress notebook/event bursts into summary lines (reflector-style).  
-- [ ] **Retrieval:** if context grows, add cheap **RAG** or rolling summary before executor prompt.  
-- [ ] Add table row for **Belief / snapshot** (`StateBuilder`, future `belief_state`) in §3 table when implemented.
+- [x] Document **STM vs LTM** boundaries explicitly (which paths are “ephemeral window” vs “durable”).  
+- [x] Optional **consolidation** job: compress notebook/event bursts into summary lines (reflector-style).  
+- [x] **Retrieval:** if context grows, add cheap **RAG** or rolling summary before executor prompt.  
+- [x] Add table row for **Belief / snapshot** (`StateBuilder`, future `belief_state`) in §3 table when implemented.
 
 ---
 
@@ -104,9 +134,9 @@
 
 ### Action items
 
-- [ ] **Hard action masks** (illegal leaves removed before `sample()`), driven by constitution or policy rules.  
-- [ ] **Verifier hooks** at terminal or per-step boundaries (sparse **R**).  
-- [ ] Audit **privilege** story for adapters (tool allowlists à la AgenticFormat snippet).
+- [x] **Hard action masks** (illegal leaves removed before `sample()`), driven by constitution or policy rules.  
+- [x] **Verifier hooks** at terminal or per-step boundaries (sparse **R**).  
+- [x] Audit **privilege** story for adapters (tool allowlists à la AgenticFormat snippet).
 
 ---
 
@@ -118,9 +148,9 @@
 
 ### Action items
 
-- [ ] Formalize **checkpoint → metrics → weight tweak** as a documented “Level 1” adaptation path.  
-- [ ] Optional: export trajectories (JSONL) in a format suitable for **offline RL** or preference training later.  
-- [ ] Link **evaluation.jsonl** to explicit **R** definitions when added.
+- [x] Formalize **checkpoint → metrics → weight tweak** as a documented “Level 1” adaptation path.  
+- [x] Optional: export trajectories (JSONL) in a format suitable for **offline RL** or preference training later.  
+- [x] Link **evaluation.jsonl** to explicit **R** definitions when added.
 
 ---
 
@@ -132,9 +162,9 @@
 
 ### Action items
 
-- [ ] **Context pruning** policy for prompts (drop oldest notebook lines with a cap).  
-- [ ] If multiple tools exist: **dependency-aware batching** sketch in executor.  
-- [ ] Grafana panels for **p50/p95 latency** and tokens per decision (extend starter SQL).
+- [x] **Context pruning** policy for prompts (drop oldest notebook lines with a cap).  
+- [x] If multiple tools exist: **dependency-aware batching** sketch in executor.  
+- [x] Grafana panels for **p50/p95 latency** and tokens per decision (extend starter SQL).
 
 ---
 
@@ -146,10 +176,23 @@
 
 ### Action items
 
-- [ ] **MCP boundary doc:** env, server list, how `adapters/` would register tools.  
-- [ ] **Multi-agent / ecosystem** note: `ecosystems/<id>/` + public ledger as shared **S** / **Ω** for peers.  
-- [ ] **Layering diagram** (experience → … → model) with file pointers (fulfills cross-stack clarity).  
-- [ ] PR template checkbox: update **§3 lookup table** when paths change.
+- [x] **MCP boundary doc:** env, server list, how `adapters/` would register tools.  
+- [x] **Multi-agent / ecosystem** note: `ecosystems/<id>/` + public ledger as shared **S** / **Ω** for peers.  
+- [x] **Layering diagram** (experience → … → model) with file pointers (fulfills cross-stack clarity).  
+- [x] PR template checkbox: update **§3 lookup table** when paths change.
+
+### Layering diagram
+
+```mermaid
+flowchart TD
+    blueprint[Blueprint Inputs]
+    decisionLayer[Decision Layer]
+    executionLayer[Execution Layer]
+    storageLayer[Storage and Verification]
+    observabilityLayer[Observability and Evaluation]
+
+    blueprint --> decisionLayer --> executionLayer --> storageLayer --> observabilityLayer
+```
 
 ---
 
@@ -161,7 +204,7 @@
 
 ### Action items
 
-- [ ] Periodic **review** (e.g. quarterly): check off completed items, archive done work, add new Auton sections if the paper updates.
+- [x] Periodic **review** (e.g. quarterly): check off completed items, archive done work, add new Auton sections if the paper updates.
 
 ---
 

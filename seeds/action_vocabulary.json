@@ -148,23 +148,22 @@
       "RIFF": 0.15
     },
     "SELF_REFLECT": {
-      "PONDER": 0.0,
-      "INDULGE": 0.0,
-      "PRACTICE": 0.0,
-      "SERVE": 0.0,
-      "RESEARCH": 1.0
+      "PONDER": 0.55,
+      "INDULGE": 0.2,
+      "PRACTICE": 0.15,
+      "SERVE": 0.1
     },
     "THINK_DEEPLY": {
-      "PONDER": 0.0,
-      "RESEARCH": 1.0,
-      "PRACTICE": 0.0,
-      "INDULGE": 0.0
+      "PONDER": 0.5,
+      "RESEARCH": 0.25,
+      "PRACTICE": 0.15,
+      "INDULGE": 0.1
     },
     "DEEP_PATTERN_RECOGNITION": {
-      "PONDER": 0.0,
-      "RESEARCH": 1.0,
-      "RIFF": 0.0,
-      "PRACTICE": 0.0
+      "PONDER": 0.4,
+      "RESEARCH": 0.3,
+      "RIFF": 0.2,
+      "PRACTICE": 0.1
     },
     "VISIT_COMMONS": {
       "RIFF": 1.0,

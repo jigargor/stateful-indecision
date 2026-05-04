@@ -1,0 +1,37 @@
+{
+  "properties": {
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "top_dist": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Top Dist",
+      "type": "object"
+    },
+    "sub_dist": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "type": "object"
+      },
+      "title": "Sub Dist",
+      "type": "object"
+    },
+    "sample_seed": {
+      "title": "Sample Seed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "top_dist",
+    "sub_dist",
+    "sample_seed"
+  ],
+  "title": "DecisionProposedPayload",
+  "type": "object"
+}

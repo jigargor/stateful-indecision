@@ -1,18 +1,35 @@
 {
-  "config_version": "0.0.131",
+  "config_version": "0.0.183",
   "ecosystem_id": "beta",
   "agent_id": "beta-agent-2",
   "model_id": "mock-beta-v1",
   "model_spec": "mock:beta-v1",
   "max_decisions": 15,
+  "memory_recent_events_cap": 20,
+  "memory_recent_notebook_cap": 5,
+  "blocked_leaf_actions": [],
+  "tool_allowlist": [
+    "web.search",
+    "web.fetch",
+    "scite.citations",
+    "zotero.catalog"
+  ],
+  "verifier_mode": "warn",
+  "reward_mode": "sparse",
+  "discount_gamma": 0.99,
+  "horizon_T": 15,
+  "enable_pi_reason_then_action": false,
+  "emit_latent_reasoning_events": false,
   "seed": 5102,
   "constitution_seed_path": "seeds/constitution_seed.md",
   "field_list_path": "seeds/field_list.json",
   "action_vocabulary_path": "seeds/action_vocabulary.json",
   "executor_templates_path": "agent/executor.py",
+  "prompt_pack_path": "prompts/sage_team_prompts.json",
   "knob_changelog": "v0.0.130: beta session stop; tuned leaf_category_weights; hashes synced to seeds",
   "constitution_seed_hash": "9f4c288ce6dad73282fd5ceff996864e35ecb4b5e96fe1065bacc74d5cea10cc",
   "field_list_hash": "c8f92be472a60ce0897fc767ab9b8ac29332f05576b0b2f3e73629577862a7a5",
-  "action_vocabulary_hash": "3168c2aa27728b2092ff943e08c5f9ad056050d25d6ba2a6e58380353cb144ec",
-  "executor_templates_hash": "f2acbe49a7a5ebb5b77dcefbdbfef145f14c4b0b05b56388b685a96a58085c9d"
+  "action_vocabulary_hash": "8e4da5322a29f1353c785db0c68c2c5db61fe353c506fe4e8f370ae81522dcaa",
+  "executor_templates_hash": "2e33e6699d4f79921b7fe7f66eccbd01d34c94ff865a384bce039e712dc4409a",
+  "prompt_pack_hash": "9f43c040c181bc39c41d92472bd9295eb79a8d6551fc7afaf38d7f8c22fc37f4"
 }

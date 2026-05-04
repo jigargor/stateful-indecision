@@ -1,0 +1,28 @@
+{
+  "properties": {
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "top_action": {
+      "title": "Top Action",
+      "type": "string"
+    },
+    "sub_action": {
+      "title": "Sub Action",
+      "type": "string"
+    },
+    "sample_seed": {
+      "title": "Sample Seed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "top_action",
+    "sub_action",
+    "sample_seed"
+  ],
+  "title": "DecisionTakenPayload",
+  "type": "object"
+}
