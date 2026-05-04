@@ -22,13 +22,13 @@ from workload.zotero import ZoteroClient
 
 ACTION_TEMPLATES: dict[str, dict[str, str]] = {
     "RESEARCH": {
-        "DISCOVER": "Search Scite for something new related to your field, and use Zotero as your catalog when useful. Name what you found and why it matters.",
+        "DISCOVER": "Search Scite for something new related to your field, and use Zotero as your catalog when useful. Name what you found and why it matters. If you discover a reusable method or workflow, consider writing a skill document.",
         "READ": "Read one relevant paper detail deeply (title, abstract, citation context if available). Summarize key claims and note what surprised you.",
         "ANALYZE": "Break down a claim or finding from your recent work. Identify assumptions, evidence gaps, and structural weaknesses. Return structured JSON.",
         "ANNOTATE": "Annotate your current findings: mark uncertainties, flag assumptions, note connections to other work. Return structured JSON.",
     },
     "PRACTICE": {
-        "WRITE": "Draft a short argument, explanation, or synthesis that advances your field focus.",
+        "WRITE": "Draft a short argument, explanation, or synthesis that advances your field focus. If you've found a more efficient method or reusable workflow, write a skill document with trigger conditions, steps, and expected output.",
         "CHALLENGE": "Challenge one of your own recent claims or assumptions. Be specific about what could be wrong and why.",
         "QUESTION": "Formulate the most important open question you're facing right now. Explain why it matters and what answering it would change.",
         "EXPERIMENT": "Try an unconventional approach to a current problem. Describe the experiment and what you expect to learn.",
@@ -102,7 +102,14 @@ class Executor:
         snapshot: StateSnapshot,
         writers: dict[str, "ChainWriter"],
     ) -> ExecutionResult:
-        system = "You are a constrained single-agent research process in v1."
+        system = (
+            "You are a constrained single-agent research process.\n"
+            "Your constitution defines who you are and what you care about.\n"
+            "Stay within your chosen field unless the action explicitly asks you to range freely.\n"
+            "If you discover a method, tool, or workflow that is more efficient than your current approach, "
+            "you may author a skill document describing it (treat this as PRACTICE/WRITE + RESEARCH/DISCOVER).\n\n"
+            f"--- CONSTITUTION ---\n{snapshot.constitution_text}\n--- END CONSTITUTION ---"
+        )
         prompt = ACTION_TEMPLATES[top_action][sub_action]
         messages = [
             {
@@ -110,7 +117,7 @@ class Executor:
                 "content": (
                     f"Action: {top_action}/{sub_action}\n"
                     f"Field: {snapshot.field_chosen}\n"
-                    f"Recent notebook: {snapshot.recent_notebook}\n"
+                    f"Recent notebook ({len(snapshot.recent_notebook)} entries): {snapshot.recent_notebook}\n"
                     f"Instruction: {prompt}"
                 ),
             }
@@ -263,6 +270,7 @@ class Executor:
             "EXPERIMENT",
         }
         if sub_action in artifact_actions:
+            is_skill = self._looks_like_skill(raw_output)
             artifact_id, artifact_path = self._write_artifact(
                 top_action=top_action,
                 sub_action=sub_action,
@@ -270,8 +278,9 @@ class Executor:
                 raw_output=raw_output,
                 structured=structured,
             )
+            event_type = "agent.skill.authored" if is_skill else "agent.artifact.stored"
             public_writer.append(
-                "agent.artifact.stored",
+                event_type,
                 {
                     "artifact_id": artifact_id,
                     "artifact_path": artifact_path,
@@ -282,7 +291,7 @@ class Executor:
                 ecosystem_id=self.storage.ecosystem_id,
                 agent_id=self.agent_id,
             )
-            side_effects.append("agent.artifact.stored")
+            side_effects.append(event_type)
 
         return ExecutionResult(
             raw_output=raw_output,
@@ -312,6 +321,12 @@ class Executor:
     @staticmethod
     def _research_query(snapshot: StateSnapshot) -> str:
         return snapshot.field_chosen or "knowledge commons"
+
+    @staticmethod
+    def _looks_like_skill(text: str) -> bool:
+        lower = text.lower()
+        markers = ["trigger:", "steps:", "skill:", "workflow:", "method:", "when to use:"]
+        return sum(1 for m in markers if m in lower) >= 2
 
     def _write_artifact(
         self,

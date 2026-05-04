@@ -18,15 +18,33 @@ class Policy:
         self.vocab = action_vocab
 
     def propose(self, state) -> ActionDistribution:
-        _ = state
         categories = self.vocab.categories
-        top_actions = sorted(categories.keys())
-        top_prob = 1.0 / len(top_actions)
-        top_dist = {top: top_prob for top in top_actions}
+        top_scores: dict[str, float] = {top: 1.0 for top in sorted(categories.keys())}
+        for top, leaves in categories.items():
+            for leaf in leaves:
+                affinity = self.vocab.category_affinity(leaf, top)
+                if affinity > 0:
+                    top_scores[top] += affinity
+
+        # If the working notebook context is saturated, prefer outward research.
+        if getattr(state, "recent_notebook", None) and len(state.recent_notebook) >= 5:
+            top_scores["RESEARCH"] = top_scores.get("RESEARCH", 1.0) * 1.25
+            top_scores["PONDER"] = top_scores.get("PONDER", 1.0) * 0.85
+
+        # If the agent is not already in commons, bias slightly toward social discovery.
+        if not getattr(state, "in_commons", False):
+            top_scores["RIFF"] = top_scores.get("RIFF", 1.0) * 1.10
+
+        top_total = sum(top_scores.values())
+        top_dist = {top: score / top_total for top, score in top_scores.items()}
         sub_dist: dict[str, dict[str, float]] = {}
         for top, leaves in categories.items():
-            leaf_prob = 1.0 / len(leaves)
-            sub_dist[top] = {leaf: leaf_prob for leaf in leaves}
+            leaf_scores: dict[str, float] = {}
+            for leaf in leaves:
+                affinity = self.vocab.category_affinity(leaf, top)
+                leaf_scores[leaf] = affinity if affinity > 0 else 1.0
+            leaf_total = sum(leaf_scores.values())
+            sub_dist[top] = {leaf: score / leaf_total for leaf, score in leaf_scores.items()}
         return ActionDistribution(
             top_dist=top_dist,
             sub_dist=sub_dist,
