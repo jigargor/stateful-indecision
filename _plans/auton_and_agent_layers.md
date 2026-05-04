@@ -1,160 +1,168 @@
-# Auton, POMDPs, and this codebase
+# Auton paper ↔ this codebase
 
-**Reference:** [The Auton Agentic AI Framework](https://arxiv.org/abs/2602.23720) (arXiv:2602.23720v1), §4 *Formal Agent Execution Model* — in particular Definition 4.1 (augmented tuple) and the factorized policy (§4.3–4.4).
-
-This document models the agent here as a **decision system in a (partially observed) Markovian setting**, aligned with Auton’s **augmented POMDP** (latent world state, observations, external actions, latent reasoning, memory context, transitions, rewards). It is a design bridge, not a machine-checked specification.
+**Reference:** [The Auton Agentic AI Framework](https://arxiv.org/abs/2602.23720) (arXiv:2602.23720v1). Below, headings mirror the whitepaper’s major sections. Each block has a **short summary**, **where this repo stands**, and **action items** (implementation / documentation).
 
 ---
 
-## 1. Auton’s augmented POMDP tuple
+## 1 Introduction
 
-Auton defines an **Agentic System** by the tuple
+**Summary:** Shift from opaque, imperative agents to **declarative, auditable** specifications; LLMs as stochastic engines controlling deterministic backends.
 
-**T = ⟨S, Ω, A, Z, M, P, R⟩**
+**Here:** We treat `run_config` + `seeds/` + `schemas/` as a lightweight **blueprint** and `agent/*` + `adapters/` as **runtime**, with event logs for auditability.
 
-| Symbol | Name (Auton) | Role |
-|--------|----------------|------|
-| **S** | Latent world state | True state of the environment (other agents, full ledgers, files, etc.); **not** directly given to the policy. |
-| **Ω** | Observation space | Per-timestep partial views **o**_t_ ∼ O(· \| **s**_t_). |
-| **A** | External action space | Side-effecting actions; transition **P**(**s**′ \| **s**, **a**) for **a** ∈ **A**. Constrained by a **constraint manifold** (safe subspace of **A**). |
-| **Z** | Latent reasoning space | Internal operations (planning, reflection, verification) that **do not** change **S**; cost tokens/time. |
-| **M** | Memory context | Sufficient summary of history **H**_t_ = (**o**_0_, **a**_0_, **z**_0_, …, **o**_t_) plus retrieved long-term knowledge. |
-| **P** | Transition kernel | **T**(**s**′ \| **s**, **a**); for **z** ∈ **Z**, **T**(**s**′ \| **s**, **z**) = δ(**s**′ = **s**). |
-| **R** | Reward | **R** : **S** × **A** × **Z** → ℝ (sparse and/or dense; may penalize bad **z**). |
+### Action items
 
-**Partial observability:** the agent does not see **s**; it acts on a **belief** or **estimate** of **S** built from **Ω** and **M**.
-
-**Factorized policy (Auton §4.3):**
-
-1. **z**_t_ ∼ π_reason(**z**_t_ \| **m**_t_; θ)  
-2. **a**_t_ ∼ π_action(**a**_t_ \| **m**_t_, **z**_t_; ϕ)  
-
-The paper notes both maps can share one LLM; the **runtime protocol** enforces *think-then-act*, not necessarily two models.
-
-**Objective (§4.4):** maximize **J** = 𝔼_τ_ [ Σ_t γ^t R(**s**_t_, **a**_t_, **z**_t_) ] over an episode horizon **T**, with discount γ ∈ [0, 1).
+- [ ] One cross-link in the root **README** (or `AGENTS.md` if present): blueprint vs runtime + arXiv pointer.  
+- [ ] Pin **paper version** (v1) in this doc when the PDF/HTML changes.
 
 ---
 
-## 2. Mapping: tuple → this repository
+## 2 The Integration Paradox and Ecosystem Fragmentation
 
-### 2.1 State **S** (latent)
+**Summary:** Mismatch between **probabilistic** model outputs and **schema-bound** systems; fragmentation across frameworks.
 
-The full **ecosystem** state: contents of all JSONL ledgers, other agents’ private state, full event history, constitution files on disk, research folders, etc. The running process **never** passes **S** as a struct to the model.
+**Here:** **ChainWriter** + `schemas/events.py` push toward typed events; the **adapter** still bridges stochastic generation and structured append paths.
 
-### 2.2 Observations **Ω** and memory **M**
+### Action items
 
-At each step, `StateBuilder.build()` constructs a **`StateSnapshot`** — a **deliberately truncated, hand-engineered** view of the world:
-
-- Constitution body and `field_chosen` (from front matter)  
-- Last N public events for this agent, last K notebook lines  
-- `in_commons` derived by scanning events  
-
-So the “observation” **o**_t_ is **not** raw API bytes; it is **f**(**H**_t_) for a fixed feature map **f**. That is a **pragmatic replacement for an explicit belief state** b(**s**): a point estimate / summary of history rather than a distribution over **S**.
-
-**M** in Auton = working history + long-term store. Here:
-
-- **Short-term:** event slices + notebook snippets in the snapshot (and whatever the executor puts in the prompt).  
-- **Long-term:** `notebook.jsonl`, evolving `constitution.md`, research artifacts — loaded only partially into each step.
-
-### 2.3 External actions **A**
-
-The **external** choice is the pair (**top_action**, **sub_action**) from the hierarchical vocabulary (`ActionVocabulary` / `seeds/action_vocabulary.json`). That is a **finite, typed** approximation to **A**, analogous to constraining **A** to a declared manifold.
-
-Sampling is **π_action**-like: `Policy.propose(snapshot)` → distribution → `sample(...)` (`agent/policy.py`, `agent/decision.py`).
-
-### 2.4 Latent reasoning **Z**
-
-Auton treats **z** as steps that **do not** transition **S**.
-
-In this codebase, **Z is not a separate event type on the public ledger.** Reasoning is **folded into** `Executor.execute(...)`: the adapter calls the LLM, which may run chain-of-thought or tool use **inside** that call. So:
-
-- **Architecturally:** one step = (build **M** → choose **a** ∈ **A** → run executor, which internally realizes **z**).  
-- **Compared to Auton:** the strict ordering **z** then **a** is **softened**: policy chooses **a** first; **z** is mostly **conditional on **a**** inside generation, not sampled as an explicit first-class variable with δ(**s**′=**s**) at the JSONL layer.
-
-A future alignment path: emit internal-only **z** records (or a scratch channel) that never call `ChainWriter` for side-effecting events, then condition **a** on **z** — matching §4.3 more literally.
-
-### 2.5 Transition **P**
-
-When an action is taken, **ChainWriter** appends to the public (and possibly agent) ledgers; constitution/notebook may update. That defines a **deterministic** transition of **observable** traces given (**s**, **a**) plus **stochastic** LLM outputs inside execution.
-
-The **Markov** property holds **approximately**: history beyond the snapshot window is dropped, so **P**(next \| snapshot) is **not** equivalent to **P**(next \| full **S**).
-
-### 2.6 Reward **R** and horizon
-
-There is **no** on-step reward wired into `decision.step` today. Auton allows sparse terminal and dense process rewards.
-
-- **Horizon:** `max_decisions` in `run_config*.json` acts like a finite **T**.  
-- **γ:** not explicit in the runner; could be tied to discounting in future RL/eval loops.  
-- **Evaluation / governance:** offline metrics (e.g. `tools/analyze_run.py`, `ecosystems/*/evaluation.jsonl`) play the role of **verifiers** that could supply **R** for analysis or training.
+- [ ] Tighten **output validation** on executor structured payloads (retry or reject before ledger write).  
+- [ ] Document **failure modes** when the model violates schema (today’s glue path).
 
 ---
 
-## 3. End-to-end step as a POMDP-style update
+## 3 The AgenticFormat Standard
 
-Using repository symbols:
+**Summary:** **Configuration over code**: language-agnostic declarative spec (YAML/JSON) for interface, tools, memory, constraints — the **Cognitive Blueprint** vs **Runtime Engine**.
 
-1. **Belief summary:** **m**_t_ ≈ `StateBuilder.build()` → `StateSnapshot`.  
-2. **Policy:** π(**a** \| **m**_t_) implemented by `Policy.propose` + `sample` (hierarchical discrete distribution).  
-3. **Execute:** LLM + templates realize internal **z** and observable outputs; side effects via writers.  
-4. **Environment:** next step reads updated ledgers → new **m**_t+1_.
+**Here:** Not AgenticFormat verbatim; closest artifacts: `run_config*.json` (version, hashes, paths), `seeds/*`, `schemas/`, vocabulary JSON. **Contract-driven** behavior via event types and vocabulary.
 
-So the agent is formally a **POMDP-style** controller: **hidden** **S**, **partial** observations summarized in **M**, **actions** that change the world and the log.
+### Action items
 
-### Action items (§3 — POMDP-style step)
+- [ ] Add a **one-line mapping table** in README: AgenticFormat concept → our file(s).  
+- [ ] Keep **hash fields** in run configs in sync with seeds (`action_vocabulary_hash`, etc.); optional CI check.  
+- [ ] Optional: **JSON Schema** (or Pydantic) export for one representative agent output type as a template for stricter contracts.
 
-- [ ] Add a short **sequence diagram** (mermaid or ASCII) in this doc or `agent/decision.py` docstring: snapshot → policy → ledger writes → next snapshot.  
-- [ ] Expose **window sizes** (e.g. last 20 public / 5 notebook lines) via `run_config` or constants with one doc line tying them to **approximate Markov** error.  
-- [ ] Optional: emit **`agent.latent.reasoned`** (or similar) events with **no** side-effecting writes — content = summary of **z** — so traces separate **Z** from **A** in logs.  
-- [ ] Optional: refactor `decision.step` into named phases (`build_m`, `sample_a`, `execute_with_z`, `observe`) for clearer alignment with Auton §4.3 ordering experiments.
-
----
-
-## 4. Layering shorthand (2026 stacks)
-
-- **Experience / orchestration:** CLI, `run_config`, ecosystem layout under `ecosystems/<id>/`.  
-- **Cognition + tooling:** `Executor` + `adapters/` (MCP-ready boundary).  
-- **Memory:** notebook + constitution + event-derived snapshot = Auton’s hierarchical memory, simplified.  
-- **Governance:** schemas, vocabulary hashes, verifiers — constraint manifold on **A** and on emitted payloads.
-
-### Action items (§4 — layering)
-
-- [ ] Add a **one-page diagram** linking experience → orchestration → cognition → memory → tooling → governance → model to **concrete entrypoints** (`__main__`, `runner`, `executor`, `adapters`, `notebook`, `core/verifier`).  
-- [ ] Document **MCP** as the default **tooling layer** boundary: list required env, server layout, and how `adapters/` would attach (even if not implemented yet).  
-- [ ] For **multi-agent orchestration**, sketch how `ecosystems/<id>/` + public ledger map to **shared POMDP** (other agents as part of **S** and **Ω**).  
-- [ ] Align **Grafana / SQLite** exports with “governance / observability” in dashboards (panel titles or variables that match this vocabulary).
-
----
-
-## 5. Earlier “Auton vs repo” one-liner table
+### Quick lookup: Auton concept → repo
 
 | Auton idea | Where it lives here |
 |------------|---------------------|
 | Cognitive Blueprint | `run_config*.json`, `seeds/*`, `schemas/` |
 | Runtime Engine | `agent/runner.py`, `agent/decision.py`, `agent/executor.py`, `agent/policy.py`, `adapters/` |
-| Constraint manifold | Finite vocabulary + event schemas + verification |
+| Constraint manifold (preview) | Finite vocabulary + event schemas + verifier |
 | Cognitive persistence | `notebook.jsonl`, constitution, research dirs |
-| Observability | JSONL events, analysis/export tools, Grafana starters |
-
-### Action items (§5 — blueprint table)
-
-- [ ] On each **major refactor**, update the table paths and add a **PR checklist** item (“Auton table in `_plans`?”).  
-- [ ] Link **`schemas/`** and **`run_config` hash fields** to **AgenticFormat / Cognitive Blueprint** in one sentence each (README or here).  
-- [ ] Add a row for **Reward / evaluation** once `R` is wired (`evaluation.jsonl`, verifiers, or training loop).  
-- [ ] Add a row for **Belief / snapshot** pointing to `StateBuilder` and any future `belief_state` module.
+| Observability | JSONL events, `tools/analyze_run.py`, export/Grafana starters |
 
 ---
 
-## 6. Cross-cutting backlog (beyond §2 mapping)
+## 4 Formal Agent Execution Model
 
-Long-term alignment from Auton §4–7: explicit **Z**, learned or factored **beliefs**, and **reward**-connected training.
+**Summary:** Agent as a decision system in an **augmented POMDP**: tuple **T = ⟨S, Ω, A, Z, M, P, R⟩**, **latent reasoning space Z**, **factorized** π_reason then π_action, discounted objective **J**.
 
-### Action items (§6)
+**Here:**
 
-- [ ] **π_reason then π_action:** prototype runtime flag — first LLM call produces **z** (stored only in scratch or `agent.latent.reasoned`), second call or structured head chooses **a**; compare event logs to baseline.  
-- [ ] **Belief:** spike a small **b(s)** or **particle filter** over discrete world features (e.g. commons occupancy) vs current deterministic **f(H)**.  
-- [ ] **R:** define sparse terminal **R** from verifier + optional dense **R** from token budget / loop detection; plumb **γ** and **T** from `run_config`.  
-- [ ] **Constraint manifold:** hard **action masks** from constitution or policy (illegal leaves removed) before `sample()`.
+- **S:** Full ecosystem state (ledgers, files, other agents); never passed wholesale to the policy.  
+- **Ω / M:** `StateBuilder` → `StateSnapshot` = hand-built summary **f(H)** (last N/K events, constitution, `in_commons`).  
+- **A:** Hierarchical `(top_action, sub_action)` from `ActionVocabulary`.  
+- **Z:** Folded into `Executor.execute` (LLM internals); **not** a separate no-side-effect ledger step yet.  
+- **P:** Appends via **ChainWriter** + stochastic generation; **Markov** only approximate due to **windowing**.  
+- **R / γ:** Horizon ≈ `max_decisions`; no on-step reward in `decision.step` yet; offline eval / `evaluation.jsonl` as verifier-style signal.
+
+**End-to-end step:** **m**_t_ ← `build()` → π(**a** | **m**_t_) → execute (internal **z**) → environment → **m**_t+1_.
+
+### Action items
+
+- [ ] **Sequence diagram** (mermaid): snapshot → policy → writes → next snapshot (here or `agent/decision.py` docstring).  
+- [ ] **Window sizes** configurable or documented (tie to approximate-Markov gap).  
+- [ ] Optional **`agent.latent.reasoned`** events (no side effects) to separate **Z** from **A** in logs.  
+- [ ] Optional **named phases** in `decision.step` for π_reason → π_action experiments.  
+- [ ] **π_reason then π_action** behind a runtime flag (scratch **z**, then sample **a**).  
+- [ ] **Belief spike:** explicit **b(s)** or particles vs deterministic **f(H)**.  
+- [ ] Plumb **γ**, **T**, and sparse/dense **R** from config + verifiers when ready.
 
 ---
 
-*This file is for reviews and roadmap alignment; §§3–6 track concrete next steps.*
+## 5 Cognitive Memory Architecture
+
+**Summary:** **Hierarchical memory**: short-term event stream + long-term consolidated knowledge; **reflector-driven consolidation** to avoid unbounded context.
+
+**Here:** **Short-term:** recent public + notebook slices in `StateSnapshot`; **long-term:** `notebook.jsonl`, `constitution.md`, research files — partially loaded per step.
+
+### Action items
+
+- [ ] Document **STM vs LTM** boundaries explicitly (which paths are “ephemeral window” vs “durable”).  
+- [ ] Optional **consolidation** job: compress notebook/event bursts into summary lines (reflector-style).  
+- [ ] **Retrieval:** if context grows, add cheap **RAG** or rolling summary before executor prompt.  
+- [ ] Add table row for **Belief / snapshot** (`StateBuilder`, future `belief_state`) in §3 table when implemented.
+
+---
+
+## 6 Safety and Governance
+
+**Summary:** **Constraint manifold**: project policy onto safe **A** by construction; not only post-hoc filtering.
+
+**Here:** Finite vocabulary, event schemas, `core/verifier` patterns; **soft** biasing in `Policy.propose` — not full hard masks yet.
+
+### Action items
+
+- [ ] **Hard action masks** (illegal leaves removed before `sample()`), driven by constitution or policy rules.  
+- [ ] **Verifier hooks** at terminal or per-step boundaries (sparse **R**).  
+- [ ] Audit **privilege** story for adapters (tool allowlists à la AgenticFormat snippet).
+
+---
+
+## 7 Self-Evolving Agents and End-to-End Optimization
+
+**Summary:** Multi-level improvement: in-context adaptation, distilled self-teaching, **RL** (e.g. GRPO/PPO) on multi-turn POMDPs.
+
+**Here:** Manual / script-driven **tuning** (`seeds/action_vocabulary.json`, `run_beta_loop.py`, `analyze_run.py`); no RL loop in-process.
+
+### Action items
+
+- [ ] Formalize **checkpoint → metrics → weight tweak** as a documented “Level 1” adaptation path.  
+- [ ] Optional: export trajectories (JSONL) in a format suitable for **offline RL** or preference training later.  
+- [ ] Link **evaluation.jsonl** to explicit **R** definitions when added.
+
+---
+
+## 8 Inference Efficiency
+
+**Summary:** **Cognitive Map-Reduce**, speculative inference, **dynamic context pruning** to bound latency.
+
+**Here:** Single-threaded step loop; token metrics logged on `action.executed`; no parallel tool graph or speculative paths.
+
+### Action items
+
+- [ ] **Context pruning** policy for prompts (drop oldest notebook lines with a cap).  
+- [ ] If multiple tools exist: **dependency-aware batching** sketch in executor.  
+- [ ] Grafana panels for **p50/p95 latency** and tokens per decision (extend starter SQL).
+
+---
+
+## 9 Strategic Impact and Open-Source Roadmap
+
+**Summary:** Declarative agents, standards (MCP), open ecosystem.
+
+**Here:** Repo is a **research / simulation** substrate; MCP mentioned as future adapter boundary.
+
+### Action items
+
+- [ ] **MCP boundary doc:** env, server list, how `adapters/` would register tools.  
+- [ ] **Multi-agent / ecosystem** note: `ecosystems/<id>/` + public ledger as shared **S** / **Ω** for peers.  
+- [ ] **Layering diagram** (experience → … → model) with file pointers (fulfills cross-stack clarity).  
+- [ ] PR template checkbox: update **§3 lookup table** when paths change.
+
+---
+
+## 10 Conclusion
+
+**Summary:** Auton unifies blueprint vs runtime, POMDP formalism, memory, constraints, evolution, and efficiency.
+
+**Here:** This document is the **living alignment** between that narrative and `stateful-indecision`; extend it as the runtime gains explicit **Z**, **R**, and stronger contracts.
+
+### Action items
+
+- [ ] Periodic **review** (e.g. quarterly): check off completed items, archive done work, add new Auton sections if the paper updates.
+
+---
+
+*Design bridge only — not a machine-checked specification.*
