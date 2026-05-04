@@ -149,6 +149,40 @@ def run_analysis(base_dir: Path, push_repo: str | None) -> None:
         subprocess.run(fallback, check=True, cwd=base_dir)
 
 
+def sync_hf_bucket(base_dir: Path, hf_bucket: str) -> None:
+    """Sync ecosystem data to a HuggingFace bucket."""
+    paths_to_sync = [
+        ("ecosystems/beta", "ecosystems/beta"),
+        (".sync_state", ".sync_state"),
+    ]
+    for local_rel, remote_rel in paths_to_sync:
+        local_path = base_dir / local_rel
+        if not local_path.exists():
+            continue
+        remote = f"{hf_bucket}/{remote_rel}"
+        print(f"[hf-sync] {local_path} -> {remote}")
+        try:
+            subprocess.run(
+                ["hf", "sync", str(local_path), remote],
+                check=True,
+                cwd=base_dir,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            print(f"[hf-sync] failed: {exc}")
+
+
+def sync_s3(base_dir: Path) -> None:
+    """Run S3 offload sync if enabled."""
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "infra.s3_sync", "--ecosystem", "beta", "--mode", "once"],
+            check=True,
+            cwd=base_dir,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"[s3-sync] failed: {exc}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sequential beta run loop to 0.9.9")
     parser.add_argument(
@@ -161,6 +195,21 @@ def main() -> None:
         "--push-repo",
         default=None,
         help="Optional HF dataset repo id for checkpoint pushes",
+    )
+    parser.add_argument(
+        "--hf-bucket",
+        default="hf://buckets/metier/sage-train",
+        help="HF bucket for checkpoint sync (default: hf://buckets/metier/sage-train)",
+    )
+    parser.add_argument(
+        "--no-hf-sync",
+        action="store_true",
+        help="Disable HF bucket sync at checkpoints",
+    )
+    parser.add_argument(
+        "--no-s3-sync",
+        action="store_true",
+        help="Disable S3 sync at checkpoints",
     )
     args = parser.parse_args()
 
@@ -191,6 +240,16 @@ def main() -> None:
                 )
                 run_analysis(base_dir, args.push_repo)
                 tune_action_vocabulary(base_dir, checkpoint_index)
+
+                if not args.no_s3_sync:
+                    sync_s3(base_dir)
+                if not args.no_hf_sync:
+                    sync_hf_bucket(base_dir, args.hf_bucket)
+
+    if not args.no_s3_sync:
+        sync_s3(base_dir)
+    if not args.no_hf_sync:
+        sync_hf_bucket(base_dir, args.hf_bucket)
 
     print(f"[summary] total_runs={total_runs}")
 
