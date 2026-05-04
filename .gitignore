@@ -23,5 +23,9 @@ ecosystems/*/.run.lock
 *.db
 grafana/
 
+# RAG vector store and sync state
+.vectordb/
+.sync_state/
+
 # leaving cursor out until I know which skills I want
 .cursor/

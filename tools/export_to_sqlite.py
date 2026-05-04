@@ -64,6 +64,24 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
         CREATE INDEX IF NOT EXISTS idx_artifacts_agent ON artifacts(agent_id);
         CREATE INDEX IF NOT EXISTS idx_runs_ecosystem ON runs(ecosystem_id);
+
+        CREATE TABLE IF NOT EXISTS research_manifest (
+            content_hash TEXT PRIMARY KEY,
+            artifact_id TEXT,
+            agent_id TEXT NOT NULL,
+            ecosystem_id TEXT NOT NULL,
+            action TEXT,
+            config_version TEXT,
+            created_at TEXT,
+            snapshot_id TEXT,
+            content TEXT,
+            summary TEXT,
+            source_path TEXT,
+            source_type TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_manifest_agent ON research_manifest(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_manifest_action ON research_manifest(action);
     """)
 
 
@@ -150,12 +168,48 @@ def _ingest_artifact(conn: sqlite3.Connection, artifact_path: Path) -> bool:
     return True
 
 
+def _ingest_manifest(conn: sqlite3.Connection, manifest_path: Path) -> int:
+    if not manifest_path.exists():
+        return 0
+    count = 0
+    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        conn.execute(
+            """INSERT OR IGNORE INTO research_manifest
+               (content_hash, artifact_id, agent_id, ecosystem_id, action,
+                config_version, created_at, snapshot_id, content, summary,
+                source_path, source_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry.get("content_hash"),
+                entry.get("artifact_id"),
+                entry.get("agent_id"),
+                entry.get("ecosystem_id"),
+                entry.get("action"),
+                entry.get("config_version"),
+                entry.get("created_at"),
+                entry.get("snapshot_id"),
+                entry.get("content"),
+                entry.get("summary"),
+                entry.get("source_path"),
+                entry.get("source_type"),
+            ),
+        )
+        count += 1
+    return count
+
+
 def export(base_dir: Path, db_path: Path) -> dict[str, int]:
     ecosystems_dir = base_dir / "ecosystems"
     conn = sqlite3.connect(str(db_path))
     _create_tables(conn)
 
-    stats = {"events": 0, "artifacts": 0, "runs": 0}
+    stats = {"events": 0, "artifacts": 0, "runs": 0, "manifest_entries": 0}
 
     if ecosystems_dir.exists():
         for jsonl_file in ecosystems_dir.rglob("*.jsonl"):
@@ -165,6 +219,12 @@ def export(base_dir: Path, db_path: Path) -> dict[str, int]:
         for research_json in ecosystems_dir.rglob("research/*.json"):
             if _ingest_artifact(conn, research_json):
                 stats["artifacts"] += 1
+
+    sync_state_dir = base_dir / ".sync_state"
+    if sync_state_dir.exists():
+        for manifest in sync_state_dir.glob("*_research_manifest.jsonl"):
+            count = _ingest_manifest(conn, manifest)
+            stats["manifest_entries"] += count
 
     conn.commit()
 
@@ -188,9 +248,10 @@ def main() -> None:
 
     stats = export(base_dir, db_path)
     print(f"Exported to {db_path}:")
-    print(f"  events:    {stats['events']}")
-    print(f"  artifacts: {stats['artifacts']}")
-    print(f"  runs:      {stats['runs']}")
+    print(f"  events:           {stats['events']}")
+    print(f"  artifacts:        {stats['artifacts']}")
+    print(f"  runs:             {stats['runs']}")
+    print(f"  manifest_entries: {stats['manifest_entries']}")
 
 
 if __name__ == "__main__":

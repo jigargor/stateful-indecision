@@ -15,4 +15,6 @@ _plans/
 .pytest_cache/
 tests/__pycache__/
 agent-transcripts/
+.vectordb/
+.sync_state/
 .sync_state/

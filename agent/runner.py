@@ -389,14 +389,24 @@ def _run_inner(
     policy = Policy(vocab, blocked_leaves=blocked_leaves)
     recent_events_cap = 20
     recent_notebook_cap = 5
+    enable_rag = False
+    rag_n_results = 5
+    rag_min_relevance = 0.3
     if run_config is not None:
         recent_events_cap = int(run_config.get("memory_recent_events_cap", recent_events_cap))
         recent_notebook_cap = int(run_config.get("memory_recent_notebook_cap", recent_notebook_cap))
+        enable_rag = bool(run_config.get("enable_rag_retrieval", False))
+        rag_n_results = int(run_config.get("rag_n_results", rag_n_results))
+        rag_min_relevance = float(run_config.get("rag_min_relevance", rag_min_relevance))
     state_builder = StateBuilder(
         storage,
         agent_id,
         recent_events_cap=recent_events_cap,
         recent_notebook_cap=recent_notebook_cap,
+        enable_rag=enable_rag,
+        rag_n_results=rag_n_results,
+        rag_min_relevance=rag_min_relevance,
+        vectordb_dir=base_dir / ".vectordb",
     )
     executor = Executor(
         llm=llm,
