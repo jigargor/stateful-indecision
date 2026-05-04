@@ -4,6 +4,8 @@ import argparse
 import json
 import subprocess
 import sys
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 
@@ -112,17 +114,19 @@ def tune_action_vocabulary(base_dir: Path, checkpoint_index: int) -> None:
     print("[checkpoint] action_vocabulary.json tuned")
 
 
-def run_agent(base_dir: Path, config_file: str) -> None:
+def run_agent(base_dir: str, config_file: str) -> tuple[str, int]:
+    """Run a single agent iteration. Returns (config_file, exit_code)."""
     command = [
         sys.executable,
         "-m",
         "agent",
         "--base-dir",
-        str(base_dir),
+        base_dir,
         "--config",
         config_file,
     ]
-    subprocess.run(command, check=True, cwd=base_dir)
+    result = subprocess.run(command, cwd=base_dir)
+    return config_file, result.returncode
 
 
 def run_analysis(base_dir: Path, push_repo: str | None) -> None:
@@ -183,13 +187,36 @@ def sync_s3(base_dir: Path) -> None:
         print(f"[s3-sync] failed: {exc}")
 
 
+def run_wave(base_dir: Path, active_configs: list[str]) -> dict[str, int]:
+    """Run all active agents in parallel. Returns {config_file: exit_code}."""
+    results: dict[str, int] = {}
+    base_str = str(base_dir)
+    with ProcessPoolExecutor(max_workers=len(active_configs)) as pool:
+        futures = {
+            pool.submit(run_agent, base_str, cfg): cfg
+            for cfg in active_configs
+        }
+        for future in as_completed(futures):
+            config_file, exit_code = future.result()
+            results[config_file] = exit_code
+            status = "ok" if exit_code == 0 else f"exit={exit_code}"
+            print(f"  [{status}] {config_file}")
+    return results
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sequential beta run loop to 0.9.9")
+    parser = argparse.ArgumentParser(description="Parallel beta run loop")
     parser.add_argument(
-        "--checkpoint-runs",
+        "--checkpoint-waves",
         type=int,
-        default=15,
-        help="Run analysis+tuning every N runs (default: 15)",
+        default=5,
+        help="Run analysis+tuning every N waves (default: 5)",
+    )
+    parser.add_argument(
+        "--max-waves",
+        type=int,
+        default=None,
+        help="Stop after N waves (default: unlimited, run until 0.9.9)",
     )
     parser.add_argument(
         "--push-repo",
@@ -215,43 +242,71 @@ def main() -> None:
 
     base_dir = Path(__file__).resolve().parents[1]
     config_paths = [base_dir / cfg for cfg in CONFIGS]
-    total_runs = 0
+    wave_count = 0
     checkpoint_index = 0
+    consecutive_wave_failures = 0
 
     while True:
-        configs = [load_json(path) for path in config_paths]
-        if any(version_gte(str(cfg["config_version"]), "0.9.9") for cfg in configs):
-            print("[done] reached 0.9.9 hard-stop target")
+        configs = [(path, load_json(path)) for path in config_paths]
+        active = [
+            (path, cfg) for path, cfg in configs
+            if not version_gte(str(cfg["config_version"]), "0.9.9")
+        ]
+
+        if not active:
+            print("[done] all agents reached 0.9.9 hard-stop target")
             break
 
-        for config_path, cfg in zip(config_paths, configs):
-            if version_gte(str(cfg["config_version"]), "0.9.9"):
-                continue
-            print(
-                f"[run] agent={cfg['agent_id']} version={cfg['config_version']} seed={cfg.get('seed')}"
-            )
-            run_agent(base_dir, config_path.name)
-            total_runs += 1
+        if args.max_waves is not None and wave_count >= args.max_waves:
+            print(f"[done] reached --max-waves={args.max_waves}")
+            break
 
-            if total_runs % args.checkpoint_runs == 0:
-                checkpoint_index += 1
-                print(
-                    f"[checkpoint] #{checkpoint_index} after {total_runs} runs: analyze + tune"
-                )
-                run_analysis(base_dir, args.push_repo)
-                tune_action_vocabulary(base_dir, checkpoint_index)
+        wave_count += 1
+        active_names = [cfg["agent_id"] for _, cfg in active]
+        active_versions = [str(cfg["config_version"]) for _, cfg in active]
+        print(f"\n[wave {wave_count}] {len(active)} agents: {', '.join(active_names)}")
+        for name, ver in zip(active_names, active_versions):
+            print(f"  {name} @ {ver}")
 
-                if not args.no_s3_sync:
-                    sync_s3(base_dir)
-                if not args.no_hf_sync:
-                    sync_hf_bucket(base_dir, args.hf_bucket)
+        t0 = time.monotonic()
+        results = run_wave(base_dir, [path.name for path, _ in active])
+        elapsed = time.monotonic() - t0
+        print(f"[wave {wave_count}] completed in {elapsed:.1f}s")
+
+        successes = sum(1 for rc in results.values() if rc == 0)
+        failures = sum(1 for rc in results.values() if rc != 0)
+
+        if successes == 0:
+            consecutive_wave_failures += 1
+            print(f"[warn] wave {wave_count} had 0 successes ({consecutive_wave_failures} consecutive)")
+            if consecutive_wave_failures >= 3:
+                print("[abort] 3 consecutive all-failure waves, stopping")
+                break
+        else:
+            consecutive_wave_failures = 0
+
+        if failures > 0:
+            for cfg_file, rc in results.items():
+                if rc != 0:
+                    print(f"  [failed] {cfg_file} exit={rc}")
+
+        if wave_count % args.checkpoint_waves == 0:
+            checkpoint_index += 1
+            print(f"\n[checkpoint] #{checkpoint_index} after wave {wave_count}")
+            run_analysis(base_dir, args.push_repo)
+            tune_action_vocabulary(base_dir, checkpoint_index)
+
+            if not args.no_s3_sync:
+                sync_s3(base_dir)
+            if not args.no_hf_sync:
+                sync_hf_bucket(base_dir, args.hf_bucket)
 
     if not args.no_s3_sync:
         sync_s3(base_dir)
     if not args.no_hf_sync:
         sync_hf_bucket(base_dir, args.hf_bucket)
 
-    print(f"[summary] total_runs={total_runs}")
+    print(f"\n[summary] waves={wave_count}")
 
 
 if __name__ == "__main__":
