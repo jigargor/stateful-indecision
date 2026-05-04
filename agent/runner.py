@@ -238,25 +238,57 @@ def main(
     if max_decisions is None:
         max_decisions = 100
 
-    constitution_seed_path = (
-        run_config_paths["constitution_seed_path"] if run_config_paths else base_dir / "seeds" / "constitution_seed.md"
-    )
-    field_list_path = run_config_paths["field_list_path"] if run_config_paths else base_dir / "seeds" / "field_list.json"
-    action_vocabulary_path = (
-        run_config_paths["action_vocabulary_path"] if run_config_paths else base_dir / "seeds" / "action_vocabulary.json"
-    )
-
     storage = EcosystemStorage(ecosystem_id=ecosystem_id, base_dir=base_dir)
     if "evaluation.jsonl" not in storage.blocked_for_agent():
         raise RuntimeError("blocked_for_agent sanity check failed")
 
+    with storage.acquire_run_lock(agent_id):
+        _run_inner(
+            storage=storage,
+            ecosystem_id=ecosystem_id,
+            agent_id=agent_id,
+            base_dir=base_dir,
+            llm_model_spec=model_spec or model_id,
+            max_decisions=max_decisions,
+            seed=seed,
+            verbose=verbose,
+            run_config=run_config,
+            run_config_paths=run_config_paths,
+            run_config_file=run_config_file,
+            constitution_seed_path=(
+                run_config_paths["constitution_seed_path"] if run_config_paths else base_dir / "seeds" / "constitution_seed.md"
+            ),
+            field_list_path=run_config_paths["field_list_path"] if run_config_paths else base_dir / "seeds" / "field_list.json",
+            action_vocabulary_path=(
+                run_config_paths["action_vocabulary_path"] if run_config_paths else base_dir / "seeds" / "action_vocabulary.json"
+            ),
+        )
+
+
+def _run_inner(
+    *,
+    storage: EcosystemStorage,
+    ecosystem_id: str,
+    agent_id: str,
+    base_dir: Path,
+    llm_model_spec: str,
+    max_decisions: int,
+    seed: int | None,
+    verbose: bool,
+    run_config: dict[str, object] | None,
+    run_config_paths: dict[str, Path] | None,
+    run_config_file: Path | None,
+    constitution_seed_path: Path,
+    field_list_path: Path,
+    action_vocabulary_path: Path,
+) -> None:
     public_writer = ChainWriter(storage.public_ledger())
     commons_writer = ChainWriter(storage.commons_ledger())
     notebook_writer = ChainWriter(storage.agent_notebook(agent_id))
     eval_writer = ChainWriter(storage.evaluation_ledger())
     writers = {"public": public_writer, "commons": commons_writer, "notebook": notebook_writer}
 
-    llm: LLMAdapter = create_adapter_auto(model_spec or model_id)
+    llm: LLMAdapter = create_adapter_auto(llm_model_spec)
 
     vocab = ActionVocabulary.load(action_vocabulary_path)
     policy = Policy(vocab)

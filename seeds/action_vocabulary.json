@@ -1,12 +1,12 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "categories": {
     "RESEARCH": ["DISCOVER", "READ", "ANALYZE", "ANNOTATE"],
     "PRACTICE": ["WRITE", "CHALLENGE", "QUESTION", "EXPERIMENT"],
-    "SERVE": ["ASSIST_PEER", "COLLABORATE", "TEACH", "ORCHESTRATE"],
+    "SERVE": ["ASSIST_PEER", "COLLABORATE", "TEACH", "ORCHESTRATE", "CALL_TOWNHALL"],
     "INDULGE": ["INNOVATE", "DREAM", "EXPLORE", "VENT", "HOBBY"],
     "PONDER": ["SELF_REFLECT", "THINK_DEEPLY", "DEEP_PATTERN_RECOGNITION"],
-    "RIFF": ["VISIT_COMMONS", "CRITIQUE_IDEA", "SHARE_IDEA", "ADMIRE"]
+    "RIFF": ["VISIT_COMMONS", "VISIT_ROUNDTABLE", "CRITIQUE_IDEA", "SHARE_IDEA", "ADMIRE"]
   },
   "leaf_category_weights": {
     "DISCOVER":                {"RESEARCH": 0.60, "INDULGE": 0.20, "PONDER": 0.10, "RIFF": 0.10},
@@ -23,6 +23,7 @@
     "COLLABORATE":             {"SERVE": 0.45, "RIFF": 0.25, "PRACTICE": 0.20, "RESEARCH": 0.10},
     "TEACH":                   {"SERVE": 0.30, "PRACTICE": 0.25, "RESEARCH": 0.20, "RIFF": 0.15, "INDULGE": 0.10},
     "ORCHESTRATE":             {"SERVE": 0.40, "PRACTICE": 0.25, "PONDER": 0.20, "RIFF": 0.15},
+    "CALL_TOWNHALL":           {"SERVE": 0.45, "RIFF": 0.25, "PRACTICE": 0.15, "PONDER": 0.15},
 
     "INNOVATE":                {"INDULGE": 0.35, "RESEARCH": 0.25, "PRACTICE": 0.20, "RIFF": 0.20},
     "DREAM":                   {"INDULGE": 0.45, "PONDER": 0.30, "RIFF": 0.25},
@@ -35,6 +36,7 @@
     "DEEP_PATTERN_RECOGNITION":{"PONDER": 0.40, "RESEARCH": 0.30, "RIFF": 0.20, "PRACTICE": 0.10},
 
     "VISIT_COMMONS":           {"RIFF": 0.40, "SERVE": 0.25, "INDULGE": 0.20, "PONDER": 0.15},
+    "VISIT_ROUNDTABLE":        {"RIFF": 0.40, "SERVE": 0.30, "PRACTICE": 0.15, "PONDER": 0.15},
     "CRITIQUE_IDEA":           {"RIFF": 0.35, "PRACTICE": 0.30, "RESEARCH": 0.20, "PONDER": 0.15},
     "SHARE_IDEA":              {"RIFF": 0.35, "SERVE": 0.30, "PRACTICE": 0.20, "INDULGE": 0.15},
     "ADMIRE":                  {"RIFF": 0.30, "PONDER": 0.30, "INDULGE": 0.25, "SERVE": 0.15}

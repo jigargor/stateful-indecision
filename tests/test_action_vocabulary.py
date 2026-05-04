@@ -7,11 +7,11 @@ from schemas.events import ActionVocabulary
 
 def test_action_vocabulary_shape() -> None:
     vocab = ActionVocabulary.load(Path("seeds/action_vocabulary.json"))
-    assert vocab.version == "0.2.0"
+    assert vocab.version == "0.3.0"
     assert len(vocab.categories) == 6
 
     leaves = vocab.all_leaves
-    assert len(leaves) == 24
+    assert len(leaves) == 26
     assert all(isinstance(leaf, str) and leaf for leaf in leaves)
     assert len(set(leaves)) == len(leaves), "duplicate leaves detected"
 

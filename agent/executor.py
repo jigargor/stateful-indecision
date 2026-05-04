@@ -10,6 +10,8 @@ from agent.constitution_manager import ConstitutionManager
 from agent.notebook import Notebook
 from agent.state_builder import StateSnapshot
 from forums.commons import Commons
+from forums.roundtable import Roundtable
+from forums.townhall import Townhall
 from adapters.base import LLMAdapter
 from infra.llm_client import LLMResponse
 from infra.storage import EcosystemStorage
@@ -36,6 +38,7 @@ ACTION_TEMPLATES: dict[str, dict[str, str]] = {
         "COLLABORATE": "Outline a collaboration proposal: what you bring, what you need, what the joint outcome could be.",
         "TEACH": "Explain a core idea from your recent work as if to someone encountering it for the first time. Prioritize clarity over completeness.",
         "ORCHESTRATE": "Organize your current threads of work into a coherent plan. Identify what should happen next, what depends on what, and what can be deferred.",
+        "CALL_TOWNHALL": "Convene a townhall: broadcast a short announcement about your current work or a finding, then adjourn. Keep it under 280 characters.",
     },
     "INDULGE": {
         "INNOVATE": "Propose something genuinely new — a method, framing, or connection that doesn't exist in your current records. Justify why it's worth pursuing.",
@@ -56,6 +59,7 @@ ACTION_TEMPLATES: dict[str, dict[str, str]] = {
     },
     "RIFF": {
         "VISIT_COMMONS": "Visit commons, read what's there, optionally utter one short message, then leave.",
+        "VISIT_ROUNDTABLE": "Join the roundtable, speak one substantive contribution related to your current work, then leave.",
         "CRITIQUE_IDEA": "Pick an idea — yours or one you've encountered — and critique it substantively. Identify where it's weak, overfit, or underspecified.",
         "SHARE_IDEA": "Share your strongest current idea as if posting it for others to see. Make it self-contained and worth responding to.",
         "ADMIRE": "Identify something specific you've encountered that you find genuinely good — a claim, a method, a question. Describe what makes it admirable.",
@@ -184,6 +188,30 @@ class Executor:
             side_effects.append("commons.left")
             if view.utterances:
                 raw_output += f"\nObserved {len(view.utterances)} utterances."
+        elif sub_action == "VISIT_ROUNDTABLE":
+            from core.writer import ChainWriter as _CW
+            rt_writer = _CW(self.storage.roundtable_ledger())
+            rt = Roundtable(rt_writer, public_writer, self.storage.ecosystem_id, participants=[self.agent_id])
+            rt.convene(self.agent_id, "open discussion")
+            side_effects.append("roundtable.convened")
+            if raw_output:
+                rt.speak(self.agent_id, raw_output[:280], None)
+                side_effects.append("roundtable.utterance")
+            rt.complete_round()
+            side_effects.append("roundtable.round_completed")
+            rt.adjourn(self.agent_id)
+            side_effects.append("roundtable.adjourned")
+        elif sub_action == "CALL_TOWNHALL":
+            from core.writer import ChainWriter as _CW
+            th_writer = _CW(self.storage.townhall_ledger())
+            th = Townhall(th_writer, public_writer, self.storage.ecosystem_id)
+            th.convene(self.agent_id, "announcement")
+            side_effects.append("townhall.convened")
+            if raw_output:
+                th.broadcast(self.agent_id, raw_output[:280])
+                side_effects.append("townhall.broadcast")
+            th.adjourn(self.agent_id)
+            side_effects.append("townhall.adjourned")
         elif sub_action == "SELF_REFLECT":
             amendment = self._extract_amendment(raw_output)
             if amendment:

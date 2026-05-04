@@ -17,3 +17,11 @@ ecosystems/*/*.jsonl
 ecosystems/*/agents/*/constitution.md
 ecosystems/*/agents/*/notebook.jsonl
 ecosystems/*/agents/*/research/
+ecosystems/*/.run.lock
+
+# Dashboard / Grafana
+*.db
+grafana/
+
+# leaving cursor out until I know which skills I want
+.cursor/

@@ -1,7 +1,20 @@
 from __future__ import annotations
 
+import json
+import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal
+
+from core.timestamps import wall_utc
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 class FirewallError(Exception):
@@ -61,6 +74,39 @@ class EcosystemStorage:
             raise FirewallError("corpus path outside base_dir")
         corpus_path.mkdir(parents=True, exist_ok=True)
         return corpus_path
+
+    def roundtable_ledger(self) -> Path:
+        return self.resolve("roundtable.jsonl")
+
+    def townhall_ledger(self) -> Path:
+        return self.resolve("townhall.jsonl")
+
+    @contextmanager
+    def acquire_run_lock(self, agent_id: str) -> Iterator[None]:
+        lock_path = self.ecosystem_dir / ".run.lock"
+        if lock_path.exists():
+            try:
+                lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
+                existing_pid = lock_data.get("pid")
+                if existing_pid is not None and _pid_alive(existing_pid):
+                    raise RuntimeError(
+                        f"Another run is active in ecosystem '{self.ecosystem_id}': "
+                        f"agent={lock_data.get('agent_id')}, pid={existing_pid}, "
+                        f"started_at={lock_data.get('started_at')}"
+                    )
+            except (json.JSONDecodeError, KeyError):
+                pass
+        lock_data = {
+            "agent_id": agent_id,
+            "pid": os.getpid(),
+            "started_at": wall_utc(),
+        }
+        lock_path.write_text(json.dumps(lock_data), encoding="utf-8")
+        try:
+            yield
+        finally:
+            if lock_path.exists():
+                lock_path.unlink()
 
     @staticmethod
     def blocked_for_agent() -> set[str]:
