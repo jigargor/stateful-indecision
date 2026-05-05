@@ -432,6 +432,26 @@ def _run_inner(
             if run_config_paths is not None and "prompt_pack_path" in run_config_paths
             else None
         ),
+        team_role=(
+            str(run_config.get("team_role"))
+            if run_config is not None and run_config.get("team_role") is not None
+            else None
+        ),
+        research_seed_doc_ids=(
+            [str(doc_id) for doc_id in run_config.get("research_seed_doc_ids", [])]
+            if run_config is not None and isinstance(run_config.get("research_seed_doc_ids"), list)
+            else None
+        ),
+        llm_effort=(
+            str(run_config.get("llm_effort"))
+            if run_config is not None and run_config.get("llm_effort") is not None
+            else None
+        ),
+        llm_max_tokens=(
+            int(run_config.get("llm_max_tokens", 4096))
+            if run_config is not None
+            else 4096
+        ),
     )
     constitution = ConstitutionManager(storage, agent_id)
     monitor = KillSwitchMonitor(

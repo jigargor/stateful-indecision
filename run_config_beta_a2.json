@@ -1,9 +1,14 @@
 {
-  "config_version": "0.0.185",
+  "config_version": "0.0.183",
   "ecosystem_id": "beta",
   "agent_id": "beta-agent-2",
   "model_id": "claude-sonnet-4-6",
   "model_spec": "anthropic:claude-sonnet-4-6",
+  "team_role": "assistant_researcher",
+  "research_seed_doc_ids": [
+    "2410.02052v1",
+    "2602.23720v1"
+  ],
   "max_decisions": 15,
   "memory_recent_events_cap": 20,
   "memory_recent_notebook_cap": 5,
@@ -30,6 +35,6 @@
   "constitution_seed_hash": "e31418623a708ae0b45bc07d61bffab2127806625dc760ff012d26bc91463a84",
   "field_list_hash": "5634cb79749e18d3c7195f478c71fb97c0aaaf410035004fafba323275a61a4c",
   "action_vocabulary_hash": "8e4da5322a29f1353c785db0c68c2c5db61fe353c506fe4e8f370ae81522dcaa",
-  "executor_templates_hash": "2e33e6699d4f79921b7fe7f66eccbd01d34c94ff865a384bce039e712dc4409a",
-  "prompt_pack_hash": "9f43c040c181bc39c41d92472bd9295eb79a8d6551fc7afaf38d7f8c22fc37f4"
+  "executor_templates_hash": "9c04655eaa7ffa80742cbdff9463e57f481d821d3fa3af62e96c59724d87c599",
+  "prompt_pack_hash": "dcb94d63df04cfd0d4fb935b13f293eedbf89cbb31b1e0f8f0aafdd96323caae"
 }

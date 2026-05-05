@@ -83,14 +83,16 @@ class EcosystemStorage:
 
     @contextmanager
     def acquire_run_lock(self, agent_id: str) -> Iterator[None]:
-        lock_path = self.ecosystem_dir / ".run.lock"
+        if "/" in agent_id or "\\" in agent_id or ".." in agent_id:
+            raise FirewallError("agent_id contains unsafe path segments")
+        lock_path = self.ecosystem_dir / f".run.lock.{agent_id}"
         if lock_path.exists():
             try:
                 lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
                 existing_pid = lock_data.get("pid")
                 if existing_pid is not None and _pid_alive(existing_pid):
                     raise RuntimeError(
-                        f"Another run is active in ecosystem '{self.ecosystem_id}': "
+                        f"Another run is active for agent '{agent_id}' in ecosystem '{self.ecosystem_id}': "
                         f"agent={lock_data.get('agent_id')}, pid={existing_pid}, "
                         f"started_at={lock_data.get('started_at')}"
                     )

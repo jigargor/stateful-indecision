@@ -111,6 +111,10 @@ class Executor:
         tool_allowlist: set[str] | None = None,
         emit_latent_reasoning_events: bool = False,
         prompt_pack: dict[str, object] | None = None,
+        team_role: str | None = None,
+        research_seed_doc_ids: list[str] | None = None,
+        llm_effort: str | None = None,
+        llm_max_tokens: int = 4096,
     ):
         self.llm = llm
         self.storage = storage
@@ -121,6 +125,12 @@ class Executor:
         self.tool_allowlist = tool_allowlist
         self.emit_latent_reasoning_events = emit_latent_reasoning_events
         self.prompt_pack = prompt_pack
+        self.team_role = team_role.strip() if team_role and team_role.strip() else None
+        self.research_seed_doc_ids = [
+            doc_id.strip() for doc_id in (research_seed_doc_ids or []) if doc_id.strip()
+        ]
+        self.llm_effort = llm_effort.strip() if llm_effort and llm_effort.strip() else None
+        self.llm_max_tokens = llm_max_tokens
 
     def execute(
         self,
@@ -141,6 +151,8 @@ class Executor:
         team_system, team_instruction = self._resolve_team_prompt(sub_action=sub_action)
         if team_system:
             system = f"{system}\n\n--- TEAM ROLE PROTOCOL ---\n{team_system}\n--- END TEAM ROLE PROTOCOL ---"
+        if self.llm_effort:
+            system = f"{system}\n\nRuntime effort target: {self.llm_effort}."
         if team_instruction:
             prompt = f"{prompt}\n\nAdditional team protocol:\n{team_instruction}"
         messages = [
@@ -155,7 +167,11 @@ class Executor:
                 ),
             }
         ]
-        llm_response = self.llm.complete(system=system, messages=messages)
+        llm_response = self.llm.complete(
+            system=system,
+            messages=messages,
+            max_tokens=self.llm_max_tokens,
+        )
         raw_output = llm_response.text
         structured, raw_output = self._parse_structured_with_retry(
             sub_action=sub_action,
@@ -465,8 +481,10 @@ class Executor:
         amendment = amendment.strip()
         return amendment or None
 
-    @staticmethod
-    def _research_query(snapshot: StateSnapshot) -> str:
+    def _research_query(self, snapshot: StateSnapshot) -> str:
+        if self.research_seed_doc_ids:
+            seed_index = len(snapshot.recent_events) % len(self.research_seed_doc_ids)
+            return self.research_seed_doc_ids[seed_index]
         return snapshot.field_chosen or "knowledge commons"
 
     @staticmethod
@@ -532,7 +550,7 @@ class Executor:
         shared = self.prompt_pack.get("shared")
         shared_dict = shared if isinstance(shared, dict) else {}
 
-        role_name = SUB_ACTION_ROLE_MAP.get(sub_action)
+        role_name = getattr(self, "team_role", None) or SUB_ACTION_ROLE_MAP.get(sub_action)
         role_system = None
         if role_name:
             role_entry = roles.get(role_name)

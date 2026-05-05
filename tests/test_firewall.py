@@ -34,3 +34,20 @@ def test_invalid_agent_id_is_blocked(tmp_path) -> None:
     storage = EcosystemStorage("alpha", tmp_path)
     with pytest.raises(FirewallError):
         storage.agent_dir("../agent-002")
+
+
+def test_run_locks_are_scoped_per_agent(tmp_path) -> None:
+    storage = EcosystemStorage("beta", tmp_path)
+
+    with storage.acquire_run_lock("agent-001"):
+        assert (storage.ecosystem_dir / ".run.lock.agent-001").exists()
+
+        with pytest.raises(RuntimeError):
+            with storage.acquire_run_lock("agent-001"):
+                pass
+
+        with storage.acquire_run_lock("agent-002"):
+            assert (storage.ecosystem_dir / ".run.lock.agent-002").exists()
+
+    assert not (storage.ecosystem_dir / ".run.lock.agent-001").exists()
+    assert not (storage.ecosystem_dir / ".run.lock.agent-002").exists()

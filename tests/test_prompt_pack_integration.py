@@ -68,6 +68,16 @@ def test_resolve_team_prompt_returns_none_for_unmapped_actions() -> None:
         )
 
 
+def test_resolve_team_prompt_prefers_configured_team_role() -> None:
+    pack = _load_prompt_pack()
+    executor = _make_executor_with_pack(pack)
+    executor.team_role = "checker"
+
+    role_system, _ = executor._resolve_team_prompt(sub_action="DISCOVER")
+
+    assert role_system == pack["roles"]["checker"]["system_prompt"].strip()
+
+
 def test_resolve_team_prompt_returns_reflection_for_reflection_actions() -> None:
     pack = _load_prompt_pack()
     executor = _make_executor_with_pack(pack)
