@@ -28,7 +28,7 @@
   "prompt_pack_path": "prompts/sage_team_prompts.json",
   "constitution_seed_hash": "7354a607a768c75ee609a877751c82b3778104750c57c1d139a64207f649348f",
   "field_list_hash": "65acce8235285f126f7e00c60c94e135fbe23da1b54fb98c770d7ad8377163a9",
-  "action_vocabulary_hash": "8e4da5322a29f1353c785db0c68c2c5db61fe353c506fe4e8f370ae81522dcaa",
+  "action_vocabulary_hash": "3eee782e3d82ac4ba7b968e5605d74d87baef6e23c2dc6c729294ed856a00bf7",
   "executor_templates_hash": "2e33e6699d4f79921b7fe7f66eccbd01d34c94ff865a384bce039e712dc4409a",
   "knob_changelog": "v0.0.6: seed 2718->3141; keep v2 constitution, testing different seed for better RESEARCH/PRACTICE action ratio",
   "prompt_pack_hash": "9f43c040c181bc39c41d92472bd9295eb79a8d6551fc7afaf38d7f8c22fc37f4"

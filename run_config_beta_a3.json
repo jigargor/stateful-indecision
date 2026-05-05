@@ -1,5 +1,5 @@
 {
-  "config_version": "0.0.182",
+  "config_version": "0.0.185",
   "ecosystem_id": "beta",
   "agent_id": "beta-agent-3",
   "model_id": "claude-haiku-4-5-20251001",
