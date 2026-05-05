@@ -1,5 +1,5 @@
 {
-  "config_version": "0.0.183",
+  "config_version": "0.0.193",
   "ecosystem_id": "beta",
   "agent_id": "beta-agent-2",
   "model_id": "claude-sonnet-4-6",

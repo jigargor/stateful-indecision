@@ -148,20 +148,21 @@
       "RIFF": 0.15
     },
     "SELF_REFLECT": {
-      "PONDER": 0.55,
+      "PONDER": 0.45,
       "INDULGE": 0.2,
       "PRACTICE": 0.15,
-      "SERVE": 0.1
+      "SERVE": 0.1,
+      "RESEARCH": 0.1
     },
     "THINK_DEEPLY": {
-      "PONDER": 0.5,
-      "RESEARCH": 0.25,
+      "PONDER": 0.4,
+      "RESEARCH": 0.35,
       "PRACTICE": 0.15,
       "INDULGE": 0.1
     },
     "DEEP_PATTERN_RECOGNITION": {
-      "PONDER": 0.4,
-      "RESEARCH": 0.3,
+      "PONDER": 0.30000000000000004,
+      "RESEARCH": 0.39999999999999997,
       "RIFF": 0.2,
       "PRACTICE": 0.1
     },

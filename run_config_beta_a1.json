@@ -1,5 +1,5 @@
 {
-  "config_version": "0.0.186",
+  "config_version": "0.0.196",
   "ecosystem_id": "beta",
   "agent_id": "beta-agent-1",
   "model_id": "claude-opus-4-6",
