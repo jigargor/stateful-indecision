@@ -246,7 +246,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Index research artifacts into a manifest for RAG ingestion"
     )
-    parser.add_argument("--ecosystem", required=True, choices=["alpha", "beta"])
+    parser.add_argument("--ecosystem", required=True, help="Ecosystem ID")
     parser.add_argument("--base-dir", type=Path, default=Path("."))
     parser.add_argument(
         "--from-s3", action="store_true",
@@ -260,13 +260,16 @@ def main() -> None:
     args = parser.parse_args()
 
     from infra.env import load_env
+    from infra.storage import validate_ecosystem_id
+
+    eco_id = validate_ecosystem_id(args.ecosystem)
     base_dir = args.base_dir.resolve()
     load_env(base_dir)
 
-    storage = EcosystemStorage(args.ecosystem, base_dir)
+    storage = EcosystemStorage(eco_id, base_dir)
 
     manifest_path = Path(args.manifest) if args.manifest else (
-        base_dir / ".sync_state" / f"{args.ecosystem}_research_manifest.jsonl"
+        base_dir / ".sync_state" / f"{eco_id}_research_manifest.jsonl"
     )
 
     entries = index_local_artifacts(storage)

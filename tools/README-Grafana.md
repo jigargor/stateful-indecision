@@ -41,15 +41,54 @@ On the import screen:
 
 Panels should load SQL queries against `events`, `artifacts`, and `runs`. If queries fail, confirm the DB path and that you re-exported after adding data.
 
-## 4.1 Suggested panels from `grafana_starter_queries.sql`
+## 4.1 Panels in the dashboard template
 
-- **Latency distribution (p50/p95):**
-  - Use query **8** as the panel source.
-  - In Grafana transformations/statistics, compute p50 and p95 over `latency_ms`.
-- **Tokens per decision:**
-  - Use query **8**, chart `tokens_total` over time or by agent.
-- **Stop reason mix:**
-  - Use query **9** for grouped bars or pie chart by `stop_reason`.
+The template ships 9 panels (IDs 1–9). Panels 1–5 cover baseline operational
+metrics; panels 6–9 add the Wave 4 observability extension.
+
+### Baseline panels (pre-existing)
+
+| ID | Title | Source query | Type |
+|----|-------|--------------|------|
+| 1 | Event Throughput by Ecosystem | Query 1 | timeseries |
+| 2 | Beta Top Action Mix | Query 2 | piechart |
+| 3 | Collaboration Signals (Alpha vs Beta) | Query 4 | barchart |
+| 4 | Notebook Duplicate Ratio by Agent | Query 5 | table |
+| 5 | Run Progression by Agent | Query 6 | table |
+
+### Wave 4 panels
+
+| ID | Title | Source query | Type |
+|----|-------|--------------|------|
+| 6 | Decision Latency Distribution (p50/p95) | Query 10 | table |
+| 7 | Tokens per Decision by Agent | Query 11 | table |
+| 8 | Stop Reason Mix Over Time | Query 12 | barchart (stacked) |
+| 9 | Action Mix Over Time | Query 13 | barchart (stacked) |
+
+### Panel details
+
+**Panel 6 — Decision Latency Distribution (p50/p95)**
+- Uses a CTE with `ROW_NUMBER()` to approximate p50 and p95 per ecosystem/agent.
+- Columns: `ecosystem_id`, `agent_id`, `sample_count`, `min_latency_ms`, `p50_latency_ms`, `p95_latency_ms`, `max_latency_ms`.
+- Alternative: use query **8** as the raw data source and add a Grafana "Stats" transformation to compute percentiles interactively.
+
+**Panel 7 — Tokens per Decision by Agent**
+- Aggregates `tokens_in`, `tokens_out`, and total across all `action.executed` events.
+- Columns: `ecosystem_id`, `agent_id`, `executions`, `total_tokens_in`, `total_tokens_out`, `total_tokens`, `avg_tokens_per_decision`.
+
+**Panel 8 — Stop Reason Mix Over Time**
+- Hourly-bucketed stacked bar chart of stop reason distribution.
+- Each bar segment represents a distinct `stop_reason` value.
+- Note: this panel aggregates across all ecosystems for a combined overview.
+  For per-ecosystem breakdown, use starter query 12 which includes
+  `ecosystem_id` in its GROUP BY clause.
+
+**Panel 9 — Action Mix Over Time**
+- Hourly-bucketed stacked bar chart of `top_action` distribution from `agent.decision.taken` events.
+- Visualizes how the action vocabulary shifts across runs.
+- Note: this panel aggregates across all ecosystems for a combined overview.
+  For per-ecosystem breakdown, use starter query 13 which includes
+  `ecosystem_id` in its GROUP BY clause.
 
 ## 5. Optional: refresh data
 

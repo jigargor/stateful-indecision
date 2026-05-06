@@ -1,0 +1,42 @@
+{
+  "properties": {
+    "speaker_id": {
+      "title": "Speaker Id",
+      "type": "string"
+    },
+    "topic": {
+      "title": "Topic",
+      "type": "string"
+    },
+    "session_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Session Kind"
+    },
+    "tangential_bridge": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tangential Bridge"
+    }
+  },
+  "required": [
+    "speaker_id",
+    "topic"
+  ],
+  "title": "TownhallConvenedPayload",
+  "type": "object"
+}

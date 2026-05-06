@@ -152,6 +152,24 @@ def embed_ltm_chunks(
     )
 
 
+def consolidate_older_entries(
+    notebook_path: Path,
+    recent_cap: int = 5,
+    chunk_size: int = 10,
+) -> list[dict]:
+    """Programmatic entry-point for notebook consolidation (read-only).
+
+    Groups older notebook entries (those beyond the STM window) into
+    deterministic summary chunks. Does NOT write to notebook.jsonl.
+
+    Returns the list of consolidated chunk dicts, each containing:
+      text, content_hash, entry_count, unique_count,
+      time_range_start, time_range_end, decision_ids.
+    """
+    entries = load_notebook_texts(notebook_path)
+    return group_into_ltm_chunks(entries, chunk_size=chunk_size, recent_cap=recent_cap)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Consolidate notebook entries into LTM and report duplication stats."

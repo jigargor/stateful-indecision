@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "rubric_path": {
+      "title": "Rubric Path",
+      "type": "string"
+    },
+    "rubric_version": {
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "rubric_missing": {
+      "default": false,
+      "title": "Rubric Missing",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rubric_path",
+    "rubric_version"
+  ],
+  "title": "SafetyTriggerArmedPayload",
+  "type": "object"
+}

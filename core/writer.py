@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from core.canonical_json import canonical_hash, canonical_json
 from core.timestamps import monotonic_ns, wall_utc
-from schemas.events import EventEnvelope
+from schemas.events import EventEnvelope, validate_known_event_payload
 
 
 NULL_HASH = "0" * 64
@@ -98,6 +98,9 @@ class ChainWriter:
         agent_id: str | None = None,
         event_id_override: str | None = None,
     ) -> EventEnvelope:
+        if not isinstance(payload, dict):
+            raise ChainWriteError("payload must be a JSON object")
+        validated_payload = validate_known_event_payload(event_type, payload)
         try:
             with self.path.open("r+", encoding="utf-8", newline="\n") as file_obj:
                 with _exclusive_lock(file_obj):
@@ -110,7 +113,7 @@ class ChainWriter:
                         "agent_id": agent_id,
                         "wall_time": wall_utc(),
                         "monotonic_ns": monotonic_ns(),
-                        "payload": payload,
+                        "payload": validated_payload,
                         "prev_hash": prev_hash,
                         "record_hash": "",
                     }

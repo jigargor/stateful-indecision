@@ -1,0 +1,26 @@
+{
+  "properties": {
+    "blocked_leaves": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blocked Leaves",
+      "type": "array"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "vocab_version": {
+      "title": "Vocab Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "blocked_leaves",
+    "source",
+    "vocab_version"
+  ],
+  "title": "PolicyMasksAppliedPayload",
+  "type": "object"
+}

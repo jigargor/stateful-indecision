@@ -24,6 +24,16 @@
     "sample_seed": {
       "title": "Sample Seed",
       "type": "integer"
+    },
+    "leaf_category_weights": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "type": "object"
+      },
+      "title": "Leaf Category Weights",
+      "type": "object"
     }
   },
   "required": [

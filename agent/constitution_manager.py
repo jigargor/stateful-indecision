@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile
 
 from core.timestamps import wall_utc
 from infra.storage import EcosystemStorage
+from safety.firewalls import validate_agent_access
 from schemas.constitution import ConstitutionFrontmatter
 
 
@@ -43,6 +44,7 @@ class ConstitutionManager:
         self.storage = storage
         self.agent_id = agent_id
         self.path = storage.agent_constitution(agent_id)
+        validate_agent_access(self.storage, self.agent_id, self.path)
 
     def read(self) -> str:
         return self.path.read_text(encoding="utf-8")

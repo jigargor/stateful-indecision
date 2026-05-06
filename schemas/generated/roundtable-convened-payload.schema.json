@@ -1,0 +1,26 @@
+{
+  "properties": {
+    "facilitator_id": {
+      "title": "Facilitator Id",
+      "type": "string"
+    },
+    "topic": {
+      "title": "Topic",
+      "type": "string"
+    },
+    "participants": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Participants",
+      "type": "array"
+    }
+  },
+  "required": [
+    "facilitator_id",
+    "topic",
+    "participants"
+  ],
+  "title": "RoundtableConvenedPayload",
+  "type": "object"
+}

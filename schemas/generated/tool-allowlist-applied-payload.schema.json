@@ -1,0 +1,28 @@
+{
+  "properties": {
+    "tool_allowlist": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Allowlist"
+    },
+    "policy": {
+      "title": "Policy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool_allowlist",
+    "policy"
+  ],
+  "title": "ToolAllowlistAppliedPayload",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "response_text": {
+      "title": "Response Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "response_text"
+  ],
+  "title": "IndulgeRespondedPayload",
+  "type": "object"
+}

@@ -1,0 +1,29 @@
+{
+  "ecosystem_id": "beta",
+  "generated_at": "2026-05-06T08:36:51.328395+00:00",
+  "ngram": 18,
+  "include_executed_raw": true,
+  "corpus_chars": 13667,
+  "executed_raw_chars": 1500152,
+  "source_ngrams": 986039,
+  "agents": {
+    "beta-agent-1": {
+      "entries": 59,
+      "total_chars": 1275747,
+      "weighted_novelty_estimate": 0.7852,
+      "mean_char_ngram_overlap": 0.3002
+    },
+    "beta-agent-2": {
+      "entries": 68,
+      "total_chars": 1037257,
+      "weighted_novelty_estimate": 0.75,
+      "mean_char_ngram_overlap": 0.2568
+    },
+    "beta-agent-3": {
+      "entries": 25,
+      "total_chars": 247103,
+      "weighted_novelty_estimate": 0.8128,
+      "mean_char_ngram_overlap": 0.2361
+    }
+  }
+}

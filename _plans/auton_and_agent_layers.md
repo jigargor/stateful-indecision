@@ -19,6 +19,29 @@ Below, headings mirror the whitepaper’s major sections. Each block has a **sho
 
 ---
 
+## Strategy Pack Links (Axis-Aligned)
+
+The strategy-first package for horizontal growth and soft ecosystem unification lives under `_plans/strategy/`:
+
+- `_plans/strategy/strategy-index.md` — control surface (status, dependencies, acceptance and rollback gates).
+- `_plans/strategy/baseline-gap-map.md` — baseline capability map + Auton concept matrix.
+- `_plans/strategy/autogen-iteration-protocol.md` — micro-wave protocol + mandatory scorecard.
+- `_plans/strategy/training-protocol.md` — three-level evolution gates (L1/L2/L3).
+- `_plans/strategy/memory-architecture.md` — disambiguated memory modes and enablement rules.
+- `_plans/strategy/cognitive-map-reduce-roadmap.md` — staged team orchestration roadmap (A/B/C).
+- `_plans/strategy/ecosystem-soft-unification.md` — alpha/beta compatibility roadmap toward prod+sandbox model.
+- `_plans/strategy/implementation-wave-plan.md` — follow-up execution waves after strategy approval.
+
+Primary code touchpoints for this strategy bundle:
+
+- Runner/config: `agent/runner.py`, `run_config*.json`
+- Memory surfaces: `agent/state_builder.py`, `agent/notebook.py`, `agent/constitution_manager.py`
+- Orchestration and tools: `agent/executor.py`, `forums/*`, `prompts/sage_team_prompts.json`
+- Constraints/safety: `agent/policy.py`, `safety/*`, `infra/storage.py`
+- Observability and adaptation: `tools/export_to_sqlite.py`, `tools/batch_etl.py`, `tools/notebook_novelty.py`
+
+---
+
 ## 1 Introduction
 
 **Summary:** Shift from opaque, imperative agents to **declarative, auditable** specifications; LLMs as stochastic engines controlling deterministic backends.
@@ -87,16 +110,46 @@ Below, headings mirror the whitepaper’s major sections. Each block has a **sho
 
 ### Sequence diagram (runtime)
 
-```mermaid
-flowchart TD
-    stateBuilder[StateBuilder.build]
-    policyPropose[Policy.propose]
-    policySample[sample]
-    executorRun[Executor.execute]
-    ledgerCommit[ChainWriter.append events]
-    nextSnapshot[Next step snapshot]
+The five named decision phases (`DECISION_PHASES` in `agent/decision.py`) map to this
+sequence. Two optional branches activate only when their config flags are `True`.
 
-    stateBuilder --> policyPropose --> policySample --> executorRun --> ledgerCommit --> nextSnapshot
+```mermaid
+sequenceDiagram
+    participant SB as StateBuilder
+    participant P as Policy
+    participant D as decision.step
+    participant E as Executor
+    participant W as ChainWriter
+
+    Note over SB,W: Phase 1 — state_snapshot
+    D->>SB: build()
+    SB-->>D: StateSnapshot
+    D->>W: append(agent.state.snapshotted)
+
+    Note over SB,W: Phase 2 — policy_proposal
+    D->>P: propose(snapshot)
+    P-->>D: Distribution
+
+    Note over SB,W: Phase 3 — policy_sample
+    alt enable_pi_reason_then_action = True
+        D->>D: _reason_phase(snapshot, top_dist)
+        D->>W: append(agent.latent.reasoned, phase=pi_reason)
+        D->>D: _sample_with_reason_bias(...)
+    else standard path (default)
+        D->>D: sample(dist, rng)
+    end
+    D->>W: append(agent.decision.proposed)
+    D->>W: append(agent.decision.taken)
+
+    Note over SB,W: Phase 4 — executor_run
+    D->>E: execute(top_action, sub_action, snapshot, writers)
+    opt emit_latent_reasoning_events = True
+        E->>W: append(agent.latent.reasoned, phase=post_generation)
+    end
+    E-->>D: ExecutionResult
+
+    Note over SB,W: Phase 5 — ledger_commit
+    D->>W: append(action.executed, decision_phases=[...])
 ```
 
 ### Action items
@@ -183,13 +236,16 @@ flowchart TD
 
 ### Layering diagram
 
+Five layers with concrete file pointers. Data flows top-down during a decision step;
+observability is fed continuously by append-only ledger writes.
+
 ```mermaid
 flowchart TD
-    blueprint[Blueprint Inputs]
-    decisionLayer[Decision Layer]
-    executionLayer[Execution Layer]
-    storageLayer[Storage and Verification]
-    observabilityLayer[Observability and Evaluation]
+    blueprint["Blueprint Inputs<br/><i>run_config*.json, seeds/*, schemas/*</i>"]
+    decisionLayer["Decision Layer<br/><i>agent/decision.py, agent/policy.py, agent/state_builder.py</i>"]
+    executionLayer["Execution Layer<br/><i>agent/executor.py, adapters/*, workload/*</i>"]
+    storageLayer["Storage and Verification<br/><i>core/writer.py, core/verifier.py, infra/storage.py</i>"]
+    observabilityLayer["Observability and Evaluation<br/><i>tools/*, safety/*, evaluation.jsonl</i>"]
 
     blueprint --> decisionLayer --> executionLayer --> storageLayer --> observabilityLayer
 ```

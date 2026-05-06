@@ -1,0 +1,41 @@
+{
+  "properties": {
+    "boundary": {
+      "title": "Boundary",
+      "type": "string"
+    },
+    "outcome": {
+      "title": "Outcome",
+      "type": "string"
+    },
+    "ledger": {
+      "title": "Ledger",
+      "type": "string"
+    },
+    "total_events": {
+      "title": "Total Events",
+      "type": "integer"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "verifier_mode": {
+      "title": "Verifier Mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "boundary",
+    "outcome",
+    "ledger",
+    "total_events",
+    "verifier_mode"
+  ],
+  "title": "VerifierBoundaryCheckedPayload",
+  "type": "object"
+}

@@ -21,7 +21,8 @@ def create_adapter(
 ) -> LLMAdapter:
     """Create an LLM adapter for the given provider and model.
 
-    Falls back to mock if the provider's API key is missing."""
+    Raises ValueError for unknown providers. Does NOT fall back to mock;
+    use create_adapter_auto() for automatic mock fallback on missing keys."""
     cls = PROVIDER_MAP.get(provider)
     if cls is None:
         raise ValueError(f"unknown provider: {provider}. Available: {list(PROVIDER_MAP.keys())}")

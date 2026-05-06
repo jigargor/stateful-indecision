@@ -1,5 +1,24 @@
 {
   "properties": {
+    "decision_event_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decision Event Id"
+    },
+    "decision_phases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Decision Phases",
+      "type": "array"
+    },
     "top_action": {
       "title": "Top Action",
       "type": "string"

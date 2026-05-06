@@ -158,3 +158,82 @@ FROM events
 WHERE event_type = 'action.executed'
 GROUP BY ecosystem_id, agent_id, stop_reason
 ORDER BY ecosystem_id, agent_id, event_count DESC;
+
+
+-- 10) p50 and p95 decision latency per ecosystem and agent
+-- SQLite lacks native percentile functions. This approximates percentiles
+-- via LIMIT+OFFSET on the ordered latency set per group.
+-- The CAST(cnt * percentile AS INTEGER) + 1 formula is a nearest-rank
+-- approximation with slight upper bias — standard for observability dashboards.
+-- For Grafana, prefer query 8 with a "Percentile" transformation.
+WITH latencies AS (
+  SELECT
+    ecosystem_id,
+    agent_id,
+    CAST(json_extract(payload_json, '$.metrics.wall_end_ms') AS REAL)
+      - CAST(json_extract(payload_json, '$.metrics.wall_start_ms') AS REAL) AS latency_ms,
+    ROW_NUMBER() OVER (PARTITION BY ecosystem_id, agent_id ORDER BY
+      CAST(json_extract(payload_json, '$.metrics.wall_end_ms') AS REAL)
+      - CAST(json_extract(payload_json, '$.metrics.wall_start_ms') AS REAL)
+    ) AS rn,
+    COUNT(*) OVER (PARTITION BY ecosystem_id, agent_id) AS cnt
+  FROM events
+  WHERE event_type = 'action.executed'
+    AND json_extract(payload_json, '$.metrics.wall_end_ms') IS NOT NULL
+    AND json_extract(payload_json, '$.metrics.wall_start_ms') IS NOT NULL
+)
+SELECT
+  ecosystem_id,
+  agent_id,
+  cnt AS sample_count,
+  MIN(latency_ms) AS min_latency_ms,
+  MAX(CASE WHEN rn = CAST(cnt * 0.5 AS INTEGER) + 1 THEN latency_ms END) AS p50_latency_ms,
+  MAX(CASE WHEN rn = CAST(cnt * 0.95 AS INTEGER) + 1 THEN latency_ms END) AS p95_latency_ms,
+  MAX(latency_ms) AS max_latency_ms
+FROM latencies
+GROUP BY ecosystem_id, agent_id
+ORDER BY ecosystem_id, agent_id;
+
+
+-- 11) Tokens per decision aggregation by ecosystem and agent
+SELECT
+  ecosystem_id,
+  agent_id,
+  COUNT(*) AS executions,
+  SUM(CAST(json_extract(payload_json, '$.metrics.tokens_in') AS INTEGER)) AS total_tokens_in,
+  SUM(CAST(json_extract(payload_json, '$.metrics.tokens_out') AS INTEGER)) AS total_tokens_out,
+  SUM(CAST(json_extract(payload_json, '$.metrics.tokens_in') AS INTEGER))
+    + SUM(CAST(json_extract(payload_json, '$.metrics.tokens_out') AS INTEGER)) AS total_tokens,
+  ROUND(
+    AVG(CAST(json_extract(payload_json, '$.metrics.tokens_in') AS REAL)
+      + CAST(json_extract(payload_json, '$.metrics.tokens_out') AS REAL)),
+    1
+  ) AS avg_tokens_per_decision
+FROM events
+WHERE event_type = 'action.executed'
+GROUP BY ecosystem_id, agent_id
+ORDER BY ecosystem_id, agent_id;
+
+
+-- 12) Stop reason distribution over time (hourly buckets)
+SELECT
+  strftime('%Y-%m-%d %H:00:00', wall_time) AS hour_bucket,
+  ecosystem_id,
+  json_extract(payload_json, '$.metrics.stop_reason') AS stop_reason,
+  COUNT(*) AS event_count
+FROM events
+WHERE event_type = 'action.executed'
+GROUP BY hour_bucket, ecosystem_id, stop_reason
+ORDER BY hour_bucket, ecosystem_id, stop_reason;
+
+
+-- 13) Action mix over time (hourly buckets, top_action distribution)
+SELECT
+  strftime('%Y-%m-%d %H:00:00', wall_time) AS hour_bucket,
+  ecosystem_id,
+  json_extract(payload_json, '$.top_action') AS top_action,
+  COUNT(*) AS decisions
+FROM events
+WHERE event_type = 'agent.decision.taken'
+GROUP BY hour_bucket, ecosystem_id, top_action
+ORDER BY hour_bucket, ecosystem_id, decisions DESC;

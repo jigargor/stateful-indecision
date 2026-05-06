@@ -387,7 +387,7 @@ def config_from_env() -> S3SyncConfig | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sync ecosystem data to S3")
-    parser.add_argument("--ecosystem", required=True, choices=["alpha", "beta"])
+    parser.add_argument("--ecosystem", required=True, help="Ecosystem ID")
     parser.add_argument("--base-dir", type=Path, default=Path("."))
     parser.add_argument(
         "--mode",

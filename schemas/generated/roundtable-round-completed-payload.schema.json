@@ -1,0 +1,21 @@
+{
+  "properties": {
+    "speakers_this_round": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Speakers This Round",
+      "type": "array"
+    },
+    "round_complete": {
+      "title": "Round Complete",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "speakers_this_round",
+    "round_complete"
+  ],
+  "title": "RoundtableRoundCompletedPayload",
+  "type": "object"
+}

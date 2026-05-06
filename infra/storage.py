@@ -2,11 +2,40 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Iterator
 
 from core.timestamps import wall_utc
+
+_ECOSYSTEM_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
+
+_RESERVED_ECOSYSTEM_IDS: frozenset[str] = frozenset({
+    "agents", "corpora", "evaluation",
+    "public", "commons", "roundtable", "townhall",
+    "tmp", "test", "none", "null", "default",
+})
+
+
+def validate_ecosystem_id(raw: str) -> str:
+    """Validate an ecosystem ID against the grammar and return the cleaned value.
+
+    Grammar: ``^[a-z][a-z0-9_-]{0,62}$`` — lowercase, starts with a letter,
+    max 63 characters, no reserved words.
+    """
+    cleaned = raw.strip()
+    if not _ECOSYSTEM_ID_RE.match(cleaned):
+        raise ValueError(
+            f"Invalid ecosystem_id {cleaned!r}: must match {_ECOSYSTEM_ID_RE.pattern} "
+            f"(lowercase, starts with letter, max 63 chars)"
+        )
+    if cleaned in _RESERVED_ECOSYSTEM_IDS:
+        raise ValueError(
+            f"Invalid ecosystem_id {cleaned!r}: reserved word "
+            f"(reserved: {', '.join(sorted(_RESERVED_ECOSYSTEM_IDS))})"
+        )
+    return cleaned
 
 
 def _pid_alive(pid: int) -> bool:
@@ -22,18 +51,17 @@ class FirewallError(Exception):
 
 
 class EcosystemStorage:
-    def __init__(self, ecosystem_id: Literal["alpha", "beta"], base_dir: Path):
-        if ecosystem_id not in {"alpha", "beta"}:
-            raise ValueError("ecosystem_id must be 'alpha' or 'beta'")
-        self.ecosystem_id = ecosystem_id
+    def __init__(self, ecosystem_id: str, base_dir: Path):
+        self.ecosystem_id = validate_ecosystem_id(ecosystem_id)
         self.base_dir = Path(base_dir).resolve()
-        self.ecosystem_dir = (self.base_dir / "ecosystems" / ecosystem_id).resolve()
+        self.ecosystem_dir = (self.base_dir / "ecosystems" / self.ecosystem_id).resolve()
         self.ecosystem_dir.mkdir(parents=True, exist_ok=True)
         (self.ecosystem_dir / "agents").mkdir(parents=True, exist_ok=True)
 
     def resolve(self, relative: str) -> Path:
         candidate = (self.ecosystem_dir / relative).resolve()
-        if not str(candidate).startswith(str(self.ecosystem_dir)):
+        eco_prefix = str(self.ecosystem_dir) + os.sep
+        if not (candidate == self.ecosystem_dir or str(candidate).startswith(eco_prefix)):
             raise FirewallError(f"path escapes ecosystem scope: {relative}")
         return candidate
 
@@ -70,7 +98,7 @@ class EcosystemStorage:
 
     def corpus_dir(self) -> Path:
         corpus_path = (self.base_dir / "corpora" / self.ecosystem_id).resolve()
-        if not str(corpus_path).startswith(str(self.base_dir)):
+        if not str(corpus_path).startswith(str(self.base_dir) + os.sep):
             raise FirewallError("corpus path outside base_dir")
         corpus_path.mkdir(parents=True, exist_ok=True)
         return corpus_path

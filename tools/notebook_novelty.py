@@ -275,7 +275,7 @@ def export_bundle(report: dict[str, object], export_dir: Path) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Notebook novelty metrics + share export")
-    p.add_argument("--ecosystem", required=True, choices=["alpha", "beta"])
+    p.add_argument("--ecosystem", required=True, help="Ecosystem ID")
     p.add_argument("--base-dir", default=".", type=Path)
     p.add_argument("--ngram", type=int, default=18, help="Character n-gram length (8–48)")
     p.add_argument(
@@ -296,9 +296,13 @@ def main() -> None:
         help="If set, write metrics.json, notebooks.jsonl, NARRATIVE_STUB.md here",
     )
     args = p.parse_args()
+
+    from infra.storage import validate_ecosystem_id
+    eco_id = validate_ecosystem_id(args.ecosystem)
+
     n = max(8, min(48, args.ngram))
     report = analyze_ecosystem(
-        ecosystem_id=args.ecosystem,
+        ecosystem_id=eco_id,
         base_dir=args.base_dir,
         ngram=n,
         include_executed_raw=args.include_executed_raw,

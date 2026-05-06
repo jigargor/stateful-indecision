@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Verify ecosystem chains when present
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          ecosystems = ("alpha", "beta")
+          for ecosystem in ecosystems:
+              root = Path("ecosystems") / ecosystem
+              has_jsonl = root.exists() and any(root.rglob("*.jsonl"))
+              if not has_jsonl:
+                  print(f"[skip] no jsonl files under {root}")
+                  continue
+              subprocess.run(
+                  ["uv", "run", "python", "-m", "tools.verify_chains", "--ecosystem", ecosystem],
+                  check=True,
+              )
+          PY
+
+      - name: Validate run_config hashes
+        run: uv run python -m tools.check_run_config_hashes --base-dir .

@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "reason": {
+      "title": "Reason",
+      "type": "string"
+    },
+    "decisions_completed": {
+      "title": "Decisions Completed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "reason",
+    "decisions_completed"
+  ],
+  "title": "AgentShutdownPayload",
+  "type": "object"
+}

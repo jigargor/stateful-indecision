@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "field": {
+      "title": "Field",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field"
+  ],
+  "title": "FieldChosenPayload",
+  "type": "object"
+}

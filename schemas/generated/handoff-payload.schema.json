@@ -1,0 +1,85 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "handoff_id": {
+      "title": "Handoff Id",
+      "type": "string"
+    },
+    "from_role": {
+      "enum": [
+        "research_lead",
+        "assistant_researcher",
+        "checker"
+      ],
+      "title": "From Role",
+      "type": "string"
+    },
+    "to_role": {
+      "enum": [
+        "research_lead",
+        "assistant_researcher",
+        "checker"
+      ],
+      "title": "To Role",
+      "type": "string"
+    },
+    "task_objective": {
+      "title": "Task Objective",
+      "type": "string"
+    },
+    "inputs_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inputs Refs",
+      "type": "array"
+    },
+    "expected_output_shape": {
+      "title": "Expected Output Shape",
+      "type": "string"
+    },
+    "deadline_step": {
+      "title": "Deadline Step",
+      "type": "integer"
+    },
+    "completion_status": {
+      "default": "pending",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed",
+        "blocked"
+      ],
+      "title": "Completion Status",
+      "type": "string"
+    },
+    "checker_verdict": {
+      "anyOf": [
+        {
+          "enum": [
+            "PASS",
+            "REVISE",
+            "BLOCK"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checker Verdict"
+    }
+  },
+  "required": [
+    "handoff_id",
+    "from_role",
+    "to_role",
+    "task_objective",
+    "inputs_refs",
+    "expected_output_shape",
+    "deadline_step"
+  ],
+  "title": "HandoffPayload",
+  "type": "object"
+}

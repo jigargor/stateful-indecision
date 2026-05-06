@@ -7,17 +7,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.verifier import verify_chain
+from infra.storage import validate_ecosystem_id
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify hash chains for an ecosystem")
-    parser.add_argument("--ecosystem", required=True, help="alpha or beta")
+    parser.add_argument("--ecosystem", required=True, help="Ecosystem ID")
     parser.add_argument("--base-dir", default=".", help="repo root")
     parser.add_argument("paths", nargs="*", help="additional .jsonl paths to verify")
     args = parser.parse_args()
 
+    eco_id = validate_ecosystem_id(args.ecosystem)
     base = Path(args.base_dir).resolve()
-    eco_dir = base / "ecosystems" / args.ecosystem
+    eco_dir = base / "ecosystems" / eco_id
 
     chains: list[Path] = []
     for jsonl in sorted(eco_dir.rglob("*.jsonl")):

@@ -1,55 +1,58 @@
 # stateful-indecision
 
-A ledger-first, single-agent research system building toward v1.0.0.
+A ledger-first, single-agent research runtime with a v1.0.0 package baseline.
 
 Blueprint-vs-runtime alignment follows the Auton framing in [The Auton Agentic AI Framework (arXiv:2602.23720v1)](https://arxiv.org/abs/2602.23720).
 
 ## Status
 
-**v1.0.0 package baseline is active on `main`; experimental snapshot work may still be tracked in `v0.x.x` history.**
+**v1.0.0 pipeline complete.** All implementation waves (0–5, E1–E4) are delivered. 417+ tests pass across contracts, safety, memory, observability, and formalism layers.
 
-The substrate is built and verified. Three agents (`biochem-lead`, `psych-lead`, `sweng-lead`) have completed alpha runs with a combined 1,632 public ledger events and 118 notebook entries across 5 agent namespaces. The system is being hardened toward a stable v1.0.0 release.
+The substrate is built and verified. Three agents (`biochem-lead`, `psych-lead`, `sweng-lead`) have completed alpha runs with a combined 1,632 public ledger events and 118 notebook entries across 5 agent namespaces. Beta ecosystem has 3,160 public events across 3 agents.
 
-What is working:
+What is implemented:
 - Hash-chained ledgers (`public`, `commons`, `evaluation`, per-agent `notebook`) with full verification
-- Vocabulary-weighted policy sampling with light state biasing over a finite action set
+- 30+ Pydantic payload models with strict validation and schema export (`tools/export_event_schemas`)
+- Vocabulary-weighted policy sampling with action masks (`blocked_leaf_actions`) and tool allowlist enforcement
 - Constitution manager with atomic append and frontmatter tracking
-- Executor with prompt templates for all action types
-- Alpha corpus loader and web adapter
-- Commons dual-write protocol
-- Firewall-enforced ecosystem path scoping
-- CLI tools: `verify_chains`, `inspect_ledger`, `diff_constitution`
+- Executor with prompt templates, decision phases (`state_snapshot` → `ledger_commit`), and latent reasoning events
+- Memory exposure controls: peer context, forum digest, RAG retrieval — all with configurable caps and provenance
+- Multi-agent surfaces: commons, roundtable, townhall forums; map-reduce handoff protocol with checker verdicts
+- Generalized ecosystem IDs with validated grammar, reserved-word checks, and firewall hardening
+- Notebook consolidation with rolling summaries and novelty proxy analysis
+- Observability: JSONL ledgers, SQLite export, Grafana dashboards, Parquet ETL, trajectory export
+- Prompt progression (`off`, `standard`, `aggressive`) with per-step escalation hints
+- Safety: hard action masks, tool allowlist, kill-switch monitoring, evaluation ledger isolation
+- S3 data offload with periodic sync and spot-instance termination handling
+- CLI tools: `verify_chains`, `inspect_ledger`, `diff_constitution`, `export_event_schemas`, `notebook_novelty`, `batch_etl`
 
 What is not in v1 scope (deferred to v2+):
-- Multiple simultaneous agents and roundtable protocol
-- Embedding-based memory retrieval
-- State-conditioned policy (currently frozen-uniform)
-- Live beta ecosystem web access
+- Promoting `verifier_mode` to `"enforce"` by default (remains `"warn"` pending operator acceptance)
+- Promoting experimental features (`enable_pi_reason_then_action`, `emit_latent_reasoning_events`) to on-by-default
+- State-conditioned policy (currently frozen-uniform with masks)
 - User-facing UI (everything is CLI + ledger files)
 
 ## Quickstart
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e .[dev]
-pytest
+uv sync --extra dev
+uv run pytest -q
 ```
 
 Run an agent:
 
 ```bash
-python -m agent --ecosystem alpha --agent-id agent-001 --model claude-sonnet-4-6-20250514 --max-decisions 100
+uv run python -m agent --ecosystem alpha --agent-id agent-001 --model claude-sonnet-4-6-20250514 --max-decisions 100
 ```
 
 Verify and inspect after a run:
 
 ```bash
-python tools/verify_chains.py --ecosystem alpha
-python tools/inspect_ledger.py --ecosystem alpha --agent agent-001 --tail 50
-python tools/diff_constitution.py --agent agent-001 --revisions all
-python -m tools.check_run_config_hashes --base-dir .
-python -m tools.export_event_schemas
+uv run python -m tools.verify_chains --ecosystem alpha
+uv run python tools/inspect_ledger.py --ecosystem alpha --agent agent-001 --tail 50
+uv run python tools/diff_constitution.py --agent agent-001 --revisions all
+uv run python -m tools.check_run_config_hashes --base-dir .
+uv run python -m tools.export_event_schemas
 ```
 
 ## Docker
@@ -179,16 +182,19 @@ Copy `.env.example` to `.env.local` and fill in your keys. Supported variables:
 stateful-indecision/
 ├── seeds/                  # Locked inputs: action vocabulary, field list, constitution seeds
 ├── schemas/                # Pydantic models for events, constitution, state, action vocabulary
+│   └── generated/          # Auto-generated JSON Schema exports (tools/export_event_schemas)
 ├── core/                   # Canonical JSON, hash-chain writer, verifier, timestamps
 ├── infra/                  # Ecosystem storage + path firewall, LLM client
 ├── agent/                  # Policy, state builder, decision loop, executor, runner, managers
-├── forums/                 # Commons implementation + v2 stubs (roundtable, townhall, t1_pulse)
+├── adapters/               # LLM adapter boundary and provider implementations
+├── forums/                 # Commons + structured forum ledgers (roundtable, townhall, t1_pulse)
 ├── workload/               # Alpha corpus adapter, field list loader, beta stub
 ├── safety/                 # Firewall validator, kill-switch monitor, kill-switch rubric
-├── tools/                  # verify_chains, inspect_ledger, diff_constitution, merge_chains
-├── tests/                  # Unit tests (canonical JSON, chain, firewall, vocabulary) + integration
+├── tools/                  # verify_chains, inspect_ledger, diff_constitution, export_event_schemas, notebook_novelty, batch_etl
+├── prompts/                # Prompt packs for team roles
+├── tests/                  # 417+ tests across contracts, safety, memory, observability, formalism
 ├── corpora/alpha/          # Curated paper corpus for alpha ecosystem
-└── ecosystems/alpha/       # Live ledger files and agent state (gitignored at runtime)
+└── ecosystems/<id>/        # Live ledger files and agent state (gitignored at runtime)
 ```
 
 ## Auton Concept Mapping
@@ -259,10 +265,10 @@ These phases are emitted on `action.executed` payloads for observability and for
 
 | Branch | Purpose |
 |---|---|
-| `main` | Active development toward v1.0.0 |
+| `main` | v1.0.x — all implementation waves complete; steady-state operation |
 | `v0.x.x` | Legacy pre-release snapshots and historical experiment states |
 
-v1.0.0 is defined as: all verification commands pass, the agent runs 100 decisions cleanly, and the constitution shows at least one revision from a `SELF_REFLECT` cycle.
+v1.0.0 is defined as: all verification commands pass, the agent runs 100 decisions cleanly, and the constitution shows at least one revision from a `SELF_REFLECT` cycle. All implementation waves (0–5, E1–E4) are delivered on this baseline.
 
 ## Operational Playbooks
 

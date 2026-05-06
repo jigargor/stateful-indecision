@@ -107,7 +107,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Ingest corpora markdown into the vector store"
     )
-    parser.add_argument("--ecosystem", required=True, choices=["alpha", "beta"])
+    parser.add_argument("--ecosystem", required=True, help="Ecosystem ID")
     parser.add_argument("--base-dir", type=Path, default=Path("."))
     parser.add_argument("--vectordb-dir", type=Path, default=None)
     parser.add_argument("--collection", default="corpora")

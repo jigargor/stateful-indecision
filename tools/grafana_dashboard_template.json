@@ -395,6 +395,313 @@
       ],
       "title": "Run Progression by Agent",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 15000
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 6,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "p95_latency_ms"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS_SQLITE}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH latencies AS (\n  SELECT ecosystem_id, agent_id,\n    CAST(json_extract(payload_json, '$.metrics.wall_end_ms') AS REAL)\n      - CAST(json_extract(payload_json, '$.metrics.wall_start_ms') AS REAL) AS latency_ms,\n    ROW_NUMBER() OVER (PARTITION BY ecosystem_id, agent_id ORDER BY\n      CAST(json_extract(payload_json, '$.metrics.wall_end_ms') AS REAL)\n      - CAST(json_extract(payload_json, '$.metrics.wall_start_ms') AS REAL)\n    ) AS rn,\n    COUNT(*) OVER (PARTITION BY ecosystem_id, agent_id) AS cnt\n  FROM events\n  WHERE event_type = 'action.executed'\n    AND json_extract(payload_json, '$.metrics.wall_end_ms') IS NOT NULL\n    AND json_extract(payload_json, '$.metrics.wall_start_ms') IS NOT NULL\n)\nSELECT ecosystem_id, agent_id, cnt AS sample_count,\n  MIN(latency_ms) AS min_latency_ms,\n  MAX(CASE WHEN rn = CAST(cnt * 0.5 AS INTEGER) + 1 THEN latency_ms END) AS p50_latency_ms,\n  MAX(CASE WHEN rn = CAST(cnt * 0.95 AS INTEGER) + 1 THEN latency_ms END) AS p95_latency_ms,\n  MAX(latency_ms) AS max_latency_ms\nFROM latencies\nGROUP BY ecosystem_id, agent_id\nORDER BY ecosystem_id, agent_id;",
+          "refId": "A"
+        }
+      ],
+      "title": "Decision Latency Distribution (p50/p95)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 7,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "avg_tokens_per_decision"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS_SQLITE}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ecosystem_id, agent_id, COUNT(*) AS executions,\n  SUM(CAST(json_extract(payload_json, '$.metrics.tokens_in') AS INTEGER)) AS total_tokens_in,\n  SUM(CAST(json_extract(payload_json, '$.metrics.tokens_out') AS INTEGER)) AS total_tokens_out,\n  SUM(CAST(json_extract(payload_json, '$.metrics.tokens_in') AS INTEGER))\n    + SUM(CAST(json_extract(payload_json, '$.metrics.tokens_out') AS INTEGER)) AS total_tokens,\n  ROUND(AVG(CAST(json_extract(payload_json, '$.metrics.tokens_in') AS REAL)\n    + CAST(json_extract(payload_json, '$.metrics.tokens_out') AS REAL)), 1) AS avg_tokens_per_decision\nFROM events\nWHERE event_type = 'action.executed'\nGROUP BY ecosystem_id, agent_id\nORDER BY ecosystem_id, agent_id;",
+          "refId": "A"
+        }
+      ],
+      "title": "Tokens per Decision by Agent",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS_SQLITE}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT strftime('%Y-%m-%d %H:00:00', wall_time) AS time,\n  json_extract(payload_json, '$.metrics.stop_reason') AS metric,\n  COUNT(*) AS value\nFROM events\nWHERE event_type = 'action.executed'\nGROUP BY time, metric\nORDER BY time;",
+          "refId": "A"
+        }
+      ],
+      "title": "Stop Reason Mix Over Time",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS_SQLITE}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT strftime('%Y-%m-%d %H:00:00', wall_time) AS time,\n  json_extract(payload_json, '$.top_action') AS metric,\n  COUNT(*) AS value\nFROM events\nWHERE event_type = 'agent.decision.taken'\nGROUP BY time, metric\nORDER BY time;",
+          "refId": "A"
+        }
+      ],
+      "title": "Action Mix Over Time",
+      "type": "barchart"
     }
   ],
   "refresh": "30s",

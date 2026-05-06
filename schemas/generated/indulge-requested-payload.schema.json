@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "request_text": {
+      "title": "Request Text",
+      "type": "string"
+    },
+    "motivation": {
+      "title": "Motivation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_text",
+    "motivation"
+  ],
+  "title": "IndulgeRequestedPayload",
+  "type": "object"
+}

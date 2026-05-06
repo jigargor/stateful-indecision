@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "speaker_id": {
+      "title": "Speaker Id",
+      "type": "string"
+    },
+    "respondent_count": {
+      "title": "Respondent Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "speaker_id",
+    "respondent_count"
+  ],
+  "title": "TownhallAdjournedPayload",
+  "type": "object"
+}

@@ -1,0 +1,125 @@
+{
+  "additionalProperties": true,
+  "properties": {
+    "decisions_completed": {
+      "title": "Decisions Completed",
+      "type": "integer"
+    },
+    "run_seed": {
+      "title": "Run Seed",
+      "type": "integer"
+    },
+    "field_chosen": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Field Chosen"
+    },
+    "constitution_revision_count": {
+      "title": "Constitution Revision Count",
+      "type": "integer"
+    },
+    "constitution_body_length": {
+      "title": "Constitution Body Length",
+      "type": "integer"
+    },
+    "action_distribution_observed": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Action Distribution Observed",
+      "type": "object"
+    },
+    "notebook_entries": {
+      "title": "Notebook Entries",
+      "type": "integer"
+    },
+    "artifacts_stored": {
+      "title": "Artifacts Stored",
+      "type": "integer"
+    },
+    "run_purpose": {
+      "title": "Run Purpose",
+      "type": "string"
+    },
+    "run_config_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Config Version"
+    },
+    "gamma": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Gamma"
+    },
+    "horizon_T": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Horizon T"
+    },
+    "reward_mode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reward Mode"
+    },
+    "run_config": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Config"
+    }
+  },
+  "required": [
+    "decisions_completed",
+    "run_seed",
+    "constitution_revision_count",
+    "constitution_body_length",
+    "action_distribution_observed",
+    "notebook_entries",
+    "artifacts_stored",
+    "run_purpose"
+  ],
+  "title": "RunCompletedPayload",
+  "type": "object"
+}

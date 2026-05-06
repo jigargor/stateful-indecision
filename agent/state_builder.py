@@ -8,8 +8,33 @@ from uuid import uuid4
 
 from agent.constitution_manager import ConstitutionManager
 from infra.storage import EcosystemStorage
+from safety.firewalls import validate_agent_access
 
 logger = logging.getLogger(__name__)
+
+
+_TRUNCATION_MARKER = " [truncated]"
+
+
+def _truncate_to_cap(text: str, cap: int) -> tuple[str, bool]:
+    """Truncate text so the result (including marker) fits within cap chars."""
+    if len(text) <= cap:
+        return text, False
+    marker_len = len(_TRUNCATION_MARKER)
+    if cap <= marker_len:
+        return _TRUNCATION_MARKER[:cap], True
+    return text[: cap - marker_len] + _TRUNCATION_MARKER, True
+
+
+@dataclass
+class ContextSegment:
+    """A provenance-tagged block of injected context for E1 memory exposure."""
+    source_type: str
+    source_ledger: str
+    source_event_ids: list[str]
+    source_agent_ids: list[str]
+    text: str
+    truncated: bool = False
 
 
 @dataclass
@@ -25,6 +50,8 @@ class StateSnapshot:
     embedding_blob_ref: str | None
     retrieved_context: list[dict] = field(default_factory=list)
     external_visitor_briefing: str | None = None
+    peer_context: list[ContextSegment] = field(default_factory=list)
+    forum_digest: list[ContextSegment] = field(default_factory=list)
 
 
 class StateBuilder:
@@ -40,6 +67,11 @@ class StateBuilder:
         rag_n_results: int = 5,
         rag_min_relevance: float = 0.3,
         vectordb_dir: Path | str = ".vectordb",
+        enable_peer_context: bool = False,
+        peer_context_cap: int = 0,
+        enable_forum_digest: bool = False,
+        forum_digest_cap: int = 0,
+        memory_context_total_cap: int = 0,
     ):
         self.storage = storage
         self.agent_id = agent_id
@@ -51,20 +83,32 @@ class StateBuilder:
         self.rag_n_results = rag_n_results
         self.rag_min_relevance = rag_min_relevance
         self.vectordb_dir = Path(vectordb_dir)
+        self.enable_peer_context = enable_peer_context
+        self.peer_context_cap = peer_context_cap
+        self.enable_forum_digest = enable_forum_digest
+        self.forum_digest_cap = forum_digest_cap
+        self.memory_context_total_cap = memory_context_total_cap
 
     def build(self) -> StateSnapshot:
-        public_events = self._load_jsonl(self.storage.public_ledger())
-        notebook_events = self._load_jsonl(self.storage.agent_notebook(self.agent_id))
+        public_path = self.storage.public_ledger()
+        notebook_path = self.storage.agent_notebook(self.agent_id)
+        townhall_path = self.storage.townhall_ledger()
+        validate_agent_access(self.storage, self.agent_id, public_path)
+        validate_agent_access(self.storage, self.agent_id, notebook_path)
+        validate_agent_access(self.storage, self.agent_id, townhall_path)
+        public_events = self._load_jsonl(public_path)
+        notebook_events = self._load_jsonl(notebook_path)
         constitution_text = self.constitution.read_body()
         field_chosen = self._frontmatter_field(self.constitution.read(), "field_chosen")
 
-        recent_events = [event for event in public_events if event.get("agent_id") == self.agent_id][-self.recent_events_cap :]
+        all_agent_events = [event for event in public_events if event.get("agent_id") == self.agent_id]
+        recent_events = all_agent_events[-self.recent_events_cap:] if self.recent_events_cap > 0 else []
         all_notebook_texts = [
             event.get("payload", {}).get("text", "")
             for event in notebook_events
             if event.get("event_type") == "agent.notebook.appended"
         ]
-        recent_notebook = all_notebook_texts[-self.recent_notebook_cap :]
+        recent_notebook = all_notebook_texts[-self.recent_notebook_cap:] if self.recent_notebook_cap > 0 else []
         older_notebook = all_notebook_texts[:-self.recent_notebook_cap] if self.recent_notebook_cap > 0 else all_notebook_texts
         recent_notebook_summary = self._summarize_notebook_prefix(older_notebook)
         belief_state = self._build_belief_state(recent_events, recent_notebook, in_commons=False)
@@ -88,7 +132,20 @@ class StateBuilder:
                 recent_events, recent_notebook, field_chosen
             )
 
-        external_visitor_briefing = self._latest_external_visitor_briefing(self.storage.townhall_ledger())
+        external_visitor_briefing = self._latest_external_visitor_briefing(townhall_path)
+
+        peer_context: list[ContextSegment] = []
+        if self.enable_peer_context and self.peer_context_cap > 0:
+            peer_context = self._extract_peer_context()
+
+        forum_digest: list[ContextSegment] = []
+        if self.enable_forum_digest and self.forum_digest_cap > 0:
+            forum_digest = self._extract_forum_digest()
+
+        if self.memory_context_total_cap > 0:
+            peer_context, forum_digest = self._apply_total_cap(
+                peer_context, forum_digest, self.memory_context_total_cap
+            )
 
         return StateSnapshot(
             snapshot_id=str(uuid4()),
@@ -102,6 +159,8 @@ class StateBuilder:
             embedding_blob_ref=embedding_blob_ref,
             retrieved_context=retrieved_context,
             external_visitor_briefing=external_visitor_briefing,
+            peer_context=peer_context,
+            forum_digest=forum_digest,
         )
 
     @staticmethod
@@ -259,6 +318,151 @@ class StateBuilder:
             parts.append(note[:200])
 
         return " ".join(parts)
+
+    def _extract_peer_context(self) -> list[ContextSegment]:
+        """Extract recent notebook snippets from peer agents, capped and provenance-tagged.
+
+        Cross-agent notebook reads are explicitly gated behind enable_peer_context.
+        The read path stays within ecosystem scope (no writes, no eval-ledger access).
+        """
+        segments: list[ContextSegment] = []
+        remaining = self.peer_context_cap
+        for peer_id in self.storage.iter_agent_ids():
+            if peer_id == self.agent_id or remaining <= 0:
+                continue
+            peer_notebook_path = self.storage.agent_notebook(peer_id)
+            if not str(peer_notebook_path.resolve()).startswith(str(self.storage.ecosystem_dir)):
+                continue
+            if not peer_notebook_path.exists():
+                continue
+            events = self._load_jsonl(peer_notebook_path)
+            notebook_entries = [
+                e for e in events
+                if e.get("event_type") == "agent.notebook.appended"
+            ]
+            if not notebook_entries:
+                continue
+            recent = notebook_entries[-3:]
+            texts: list[str] = []
+            event_ids: list[str] = []
+            for entry in recent:
+                text = str(entry.get("payload", {}).get("text", ""))
+                eid = str(entry.get("event_id", ""))
+                if text.strip():
+                    texts.append(text)
+                    if eid:
+                        event_ids.append(eid)
+            if not texts:
+                continue
+            combined = " | ".join(texts)
+            combined, truncated = _truncate_to_cap(combined, remaining)
+            segment = ContextSegment(
+                source_type="peer_notebook",
+                source_ledger=str(peer_notebook_path.relative_to(self.storage.base_dir)),
+                source_event_ids=event_ids,
+                source_agent_ids=[peer_id],
+                text=combined,
+                truncated=truncated,
+            )
+            segments.append(segment)
+            remaining -= len(combined)
+        return segments
+
+    def _extract_forum_digest(self) -> list[ContextSegment]:
+        """Extract recent roundtable and townhall utterances, capped and provenance-tagged."""
+        segments: list[ContextSegment] = []
+        remaining = self.forum_digest_cap
+
+        forum_sources = [
+            ("roundtable", self.storage.roundtable_ledger(), {"roundtable.utterance"}),
+            ("townhall", self.storage.townhall_ledger(), {"townhall.broadcast", "townhall.response"}),
+        ]
+        for source_name, ledger_path, speech_types in forum_sources:
+            if remaining <= 0:
+                break
+            validate_agent_access(self.storage, self.agent_id, ledger_path)
+            if not ledger_path.exists():
+                continue
+            events = self._load_jsonl(ledger_path)
+            speech_events = [e for e in events if e.get("event_type") in speech_types]
+            if not speech_events:
+                continue
+            recent = speech_events[-5:]
+            texts: list[str] = []
+            event_ids: list[str] = []
+            agent_ids: list[str] = []
+            for entry in recent:
+                payload = entry.get("payload", {})
+                text = str(payload.get("text", "")).strip()
+                eid = str(entry.get("event_id", ""))
+                aid = str(entry.get("agent_id", ""))
+                if text:
+                    texts.append(f"[{aid}] {text}" if aid else text)
+                    if eid:
+                        event_ids.append(eid)
+                    if aid and aid not in agent_ids:
+                        agent_ids.append(aid)
+            if not texts:
+                continue
+            combined = "\n".join(texts)
+            combined, truncated = _truncate_to_cap(combined, remaining)
+            segment = ContextSegment(
+                source_type=f"forum_{source_name}",
+                source_ledger=str(ledger_path.relative_to(self.storage.base_dir)),
+                source_event_ids=event_ids,
+                source_agent_ids=agent_ids,
+                text=combined,
+                truncated=truncated,
+            )
+            segments.append(segment)
+            remaining -= len(combined)
+        return segments
+
+    @staticmethod
+    def _apply_total_cap(
+        peer_context: list[ContextSegment],
+        forum_digest: list[ContextSegment],
+        total_cap: int,
+    ) -> tuple[list[ContextSegment], list[ContextSegment]]:
+        """Enforce a global character budget across all E1 context segments."""
+        remaining = total_cap
+        capped_peer: list[ContextSegment] = []
+        for seg in peer_context:
+            if remaining <= 0:
+                break
+            if len(seg.text) <= remaining:
+                capped_peer.append(seg)
+                remaining -= len(seg.text)
+            else:
+                text, _ = _truncate_to_cap(seg.text, remaining)
+                capped_peer.append(ContextSegment(
+                    source_type=seg.source_type,
+                    source_ledger=seg.source_ledger,
+                    source_event_ids=seg.source_event_ids,
+                    source_agent_ids=seg.source_agent_ids,
+                    text=text,
+                    truncated=True,
+                ))
+                remaining = 0
+        capped_forum: list[ContextSegment] = []
+        for seg in forum_digest:
+            if remaining <= 0:
+                break
+            if len(seg.text) <= remaining:
+                capped_forum.append(seg)
+                remaining -= len(seg.text)
+            else:
+                text, _ = _truncate_to_cap(seg.text, remaining)
+                capped_forum.append(ContextSegment(
+                    source_type=seg.source_type,
+                    source_ledger=seg.source_ledger,
+                    source_event_ids=seg.source_event_ids,
+                    source_agent_ids=seg.source_agent_ids,
+                    text=text,
+                    truncated=True,
+                ))
+                remaining = 0
+        return capped_peer, capped_forum
 
     @staticmethod
     def _build_belief_state(

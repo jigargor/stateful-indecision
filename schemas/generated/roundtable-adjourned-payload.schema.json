@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "facilitator_id": {
+      "title": "Facilitator Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "facilitator_id"
+  ],
+  "title": "RoundtableAdjournedPayload",
+  "type": "object"
+}

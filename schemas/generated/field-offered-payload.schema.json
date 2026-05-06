@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Fields",
+      "type": "array"
+    }
+  },
+  "required": [
+    "fields"
+  ],
+  "title": "FieldOfferedPayload",
+  "type": "object"
+}

@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "seed_source": {
+      "title": "Seed Source",
+      "type": "string"
+    },
+    "model_id": {
+      "title": "Model Id",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seed_source",
+    "model_id",
+    "provider"
+  ],
+  "title": "AgentInstantiatedPayload",
+  "type": "object"
+}

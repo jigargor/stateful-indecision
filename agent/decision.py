@@ -14,6 +14,14 @@ from schemas.events import (
     DecisionTakenPayload,
 )
 
+DECISION_PHASES: list[str] = [
+    "state_snapshot",
+    "policy_proposal",
+    "policy_sample",
+    "executor_run",
+    "ledger_commit",
+]
+
 
 @dataclass
 class StepResult:
@@ -75,6 +83,18 @@ def step(
     decision_number: int = 1,
     max_decisions: int = 100,
 ) -> StepResult:
+    """Execute one decision step through five sequential phases (see DECISION_PHASES):
+
+    1. state_snapshot  — StateBuilder.build() → agent.state.snapshotted event.
+    2. policy_proposal — Policy.propose(snapshot) → builds action distributions
+       (no ledger event emitted in this phase).
+    3. policy_sample   — sample(dist, rng) (or biased variant when
+       enable_pi_reason_then_action is True) selects top/sub action, then
+       BOTH agent.decision.proposed and agent.decision.taken events are
+       appended to the ledger.
+    4. executor_run    — Executor.execute(...) → side effects + raw output.
+    5. ledger_commit   — action.executed event with phase metadata.
+    """
     snapshot = state_builder.build()
     snapshot_payload = AgentStateSnapshottedPayload(
         snapshot_id=snapshot.snapshot_id,
@@ -167,9 +187,9 @@ def step(
     writers["public"].append(
         "action.executed",
         {
-            "decision_event_id": taken_event.event_id,
-            "decision_phases": ["state_snapshot", "policy_proposal", "policy_sample", "executor_run", "ledger_commit"],
             **action_executed_payload,
+            "decision_event_id": taken_event.event_id,
+            "decision_phases": list(DECISION_PHASES),
         },
         ecosystem_id=ecosystem_id,
         agent_id=agent_id,

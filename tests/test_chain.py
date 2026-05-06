@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from core.verifier import verify_chain
 from core.writer import ChainWriter
 
@@ -61,3 +63,15 @@ def test_genesis_prev_hash(tmp_path) -> None:
     writer.append("event.test", {"index": 0}, ecosystem_id="alpha", agent_id="agent-001")
     first = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
     assert first["prev_hash"] == "0" * 64
+
+
+def test_known_payload_validation_rejects_invalid_shape(tmp_path) -> None:
+    path = tmp_path / "chain.jsonl"
+    writer = ChainWriter(path)
+    with pytest.raises(ValueError):
+        writer.append(
+            "agent.decision.taken",
+            {"snapshot_id": "snap-1", "top_action": "RESEARCH"},
+            ecosystem_id="alpha",
+            agent_id="agent-001",
+        )

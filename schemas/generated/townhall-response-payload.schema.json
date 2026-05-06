@@ -1,0 +1,25 @@
+{
+  "properties": {
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "in_response_to": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "In Response To"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "TownhallResponsePayload",
+  "type": "object"
+}

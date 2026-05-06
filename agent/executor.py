@@ -15,6 +15,7 @@ from forums.townhall import Townhall
 from adapters.base import LLMAdapter
 from infra.llm_client import LLMResponse
 from infra.storage import EcosystemStorage
+from safety.firewalls import validate_agent_access
 from workload.scite import SciteClient
 from workload.web_alpha import WebAlpha
 from workload.zotero import ZoteroClient
@@ -162,7 +163,9 @@ class Executor:
         self.llm_effort = llm_effort.strip() if llm_effort and llm_effort.strip() else None
         self.llm_max_tokens = llm_max_tokens
         pp = (prompt_progression or "off").strip().lower()
-        self.prompt_progression = pp if pp in {"off", "standard", "aggressive"} else "off"
+        if pp not in {"off", "standard", "aggressive"}:
+            raise ValueError("prompt_progression must be one of: off, standard, aggressive")
+        self.prompt_progression = pp
 
     def execute(
         self,
@@ -198,6 +201,43 @@ class Executor:
         visitor_block = ""
         if snapshot.external_visitor_briefing:
             visitor_block = f"External townhall visitor (context):\n{snapshot.external_visitor_briefing}\n\n"
+        peer_block = ""
+        if snapshot.peer_context:
+            lines = ["--- PEER CONTEXT (opt-in, capped) ---"]
+            for seg in snapshot.peer_context:
+                lines.append(
+                    f"[source: {seg.source_type} | agents: {','.join(seg.source_agent_ids)} "
+                    f"| events: {','.join(seg.source_event_ids)} | ledger: {seg.source_ledger}]"
+                )
+                lines.append(seg.text)
+            lines.append("--- END PEER CONTEXT ---")
+            peer_block = "\n".join(lines) + "\n\n"
+        forum_block = ""
+        if snapshot.forum_digest:
+            lines = ["--- FORUM DIGEST (opt-in, capped) ---"]
+            for seg in snapshot.forum_digest:
+                lines.append(
+                    f"[source: {seg.source_type} | agents: {','.join(seg.source_agent_ids)} "
+                    f"| events: {','.join(seg.source_event_ids)} | ledger: {seg.source_ledger}]"
+                )
+                lines.append(seg.text)
+            lines.append("--- END FORUM DIGEST ---")
+            forum_block = "\n".join(lines) + "\n\n"
+        retrieval_block = ""
+        if snapshot.retrieved_context:
+            lines = ["--- RETRIEVED CONTEXT (opt-in, capped) ---"]
+            for entry in snapshot.retrieved_context:
+                source_type = entry.get("source_type", "unknown")
+                agent_id = entry.get("agent_id", "")
+                doc_id = entry.get("id", "")
+                relevance = entry.get("relevance", "")
+                lines.append(
+                    f"[source: retrieval_{source_type} | agent: {agent_id} "
+                    f"| doc: {doc_id} | relevance: {relevance}]"
+                )
+                lines.append(str(entry.get("text", ""))[:2000])
+            lines.append("--- END RETRIEVED CONTEXT ---")
+            retrieval_block = "\n".join(lines) + "\n\n"
         messages = [
             {
                 "role": "user",
@@ -205,6 +245,9 @@ class Executor:
                     f"Action: {top_action}/{sub_action}\n"
                     f"Field: {snapshot.field_chosen}\n"
                     f"{visitor_block}"
+                    f"{peer_block}"
+                    f"{forum_block}"
+                    f"{retrieval_block}"
                     f"Recent notebook ({len(snapshot.recent_notebook)} entries): {snapshot.recent_notebook}\n"
                     f"Notebook summary: {snapshot.recent_notebook_summary}\n"
                     f"Instruction: {prompt}"
@@ -547,11 +590,13 @@ class Executor:
         structured: dict | None,
     ) -> tuple[str, str]:
         research_dir = self.storage.agent_research_dir(self.agent_id)
+        validate_agent_access(self.storage, self.agent_id, research_dir)
         artifact_id = str(uuid4())
         artifact_number = self.storage.count_artifacts(self.agent_id) + 1
         stamp = wall_utc().replace(":", "-").replace(".", "-")
         filename = f"{artifact_number:03d}_{sub_action.lower()}_{stamp}.json"
         artifact_path = research_dir / filename
+        validate_agent_access(self.storage, self.agent_id, artifact_path)
         payload = {
             "artifact_id": artifact_id,
             "agent_id": self.agent_id,

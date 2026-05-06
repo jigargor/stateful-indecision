@@ -1,0 +1,85 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "handoff_id": {
+      "title": "Handoff Id",
+      "type": "string"
+    },
+    "batch_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Batch Id"
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "REVISE",
+        "BLOCK"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "checker_confidence": {
+      "title": "Checker Confidence",
+      "type": "number"
+    },
+    "scores": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Scores",
+      "type": "object"
+    },
+    "accepted_claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Claim Ids",
+      "type": "array"
+    },
+    "rejected_claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rejected Claim Ids",
+      "type": "array"
+    },
+    "issues": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "handoff_id",
+    "verdict",
+    "checker_confidence",
+    "scores"
+  ],
+  "title": "CheckerVerdictPayload",
+  "type": "object"
+}

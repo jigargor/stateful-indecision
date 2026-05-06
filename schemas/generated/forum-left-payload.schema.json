@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "duration_steps": {
+      "title": "Duration Steps",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "duration_steps"
+  ],
+  "title": "ForumLeftPayload",
+  "type": "object"
+}

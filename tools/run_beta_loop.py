@@ -14,6 +14,7 @@ CONFIGS = [
     "run_config_beta_a2.json",
     "run_config_beta_a3.json",
 ]
+RUN_CONFIG_HARD_STOP_VERSION = "1.0.0"
 
 
 def parse_version(version: str) -> tuple[int, int, int]:
@@ -216,7 +217,7 @@ def main() -> None:
         "--max-waves",
         type=int,
         default=None,
-        help="Stop after N waves (default: unlimited, run until 0.9.9)",
+        help=f"Stop after N waves (default: unlimited, run until {RUN_CONFIG_HARD_STOP_VERSION})",
     )
     parser.add_argument(
         "--push-repo",
@@ -250,11 +251,11 @@ def main() -> None:
         configs = [(path, load_json(path)) for path in config_paths]
         active = [
             (path, cfg) for path, cfg in configs
-            if not version_gte(str(cfg["config_version"]), "0.9.9")
+            if not version_gte(str(cfg["config_version"]), RUN_CONFIG_HARD_STOP_VERSION)
         ]
 
         if not active:
-            print("[done] all agents reached 0.9.9 hard-stop target")
+            print(f"[done] all agents reached {RUN_CONFIG_HARD_STOP_VERSION} hard-stop target")
             break
 
         if args.max_waves is not None and wave_count >= args.max_waves:

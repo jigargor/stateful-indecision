@@ -15,12 +15,54 @@ from agent.decision import step
 from agent.executor import Executor
 from agent.policy import Policy
 from agent.state_builder import StateBuilder
+from core.verifier import verify_chain
 from core.writer import ChainCorruptionError, ChainWriter
 from infra.env import load_env
 from infra.llm_client import LLMError
 from infra.storage import EcosystemStorage, FirewallError
 from safety.kill_switch import KillSwitchMonitor
 from schemas.events import ActionVocabulary, EventEnvelope
+from tools.consolidate_notebook import consolidate_older_entries
+
+RUN_CONFIG_HARD_STOP_VERSION = "1.0.0"
+
+
+def _verify_boundary(
+    *,
+    eval_writer: ChainWriter,
+    ledger_path: Path,
+    boundary: str,
+    ecosystem_id: str,
+    agent_id: str,
+    verifier_mode: str,
+) -> None:
+    """Run chain verification at a run boundary and emit result to evaluation ledger.
+
+    boundary should be "start" or "terminal".
+    """
+    result = verify_chain(ledger_path)
+    error_dicts = [
+        {"line_number": e.line_number, "event_id": e.event_id, "error": e.error}
+        for e in result.errors
+    ]
+    eval_writer.append(
+        "verifier.boundary_checked",
+        {
+            "boundary": boundary,
+            "outcome": "pass" if result.valid else "fail",
+            "ledger": str(ledger_path.name),
+            "total_events": result.total_events,
+            "errors": error_dicts,
+            "verifier_mode": verifier_mode,
+        },
+        ecosystem_id=ecosystem_id,
+        agent_id=agent_id,
+    )
+    if not result.valid and verifier_mode == "enforce":
+        raise ChainCorruptionError(
+            f"verifier {boundary} check failed on {ledger_path.name}: "
+            f"{len(result.errors)} error(s)"
+        )
 
 
 def _maybe_inject_external_townhall_visitor(
@@ -226,6 +268,66 @@ def _load_prompt_pack(path: Path) -> dict[str, object]:
     return data
 
 
+def _parse_tool_allowlist(raw: object | None) -> set[str] | None:
+    if raw is None:
+        return set()
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ValueError("run_config 'tool_allowlist' must be a list of strings when provided")
+    return {item.strip() for item in raw if item.strip()}
+
+
+def _validate_run_config_modes(config: dict[str, object]) -> None:
+    # DEPRECATION(E4): Reliance on absent prompt_progression key implying "off"
+    # is deprecated.  All run_config files should include an explicit value.
+    # Transition window: 2 config versions.  Removal target: v2.0.0.
+    prompt_progression = str(config.get("prompt_progression", "off")).strip().lower()
+    if prompt_progression not in {"off", "standard", "aggressive"}:
+        raise ValueError("run_config 'prompt_progression' must be one of: off, standard, aggressive")
+    config["prompt_progression"] = prompt_progression
+
+    # DEPRECATION(E4): verifier_mode "warn" is supported but promotion to "enforce"
+    # is pending operator acceptance testing.  Target: evaluate in v2.0.0 cycle.
+    verifier_mode = str(config.get("verifier_mode", "warn")).strip().lower()
+    if verifier_mode not in {"warn", "enforce"}:
+        raise ValueError("run_config 'verifier_mode' must be one of: warn, enforce")
+    config["verifier_mode"] = verifier_mode
+
+    reward_mode = str(config.get("reward_mode", "sparse")).strip().lower()
+    if reward_mode not in {"sparse", "dense"}:
+        raise ValueError("run_config 'reward_mode' must be one of: sparse, dense")
+    config["reward_mode"] = reward_mode
+
+    config["tool_allowlist"] = sorted(_parse_tool_allowlist(config.get("tool_allowlist")) or [])
+
+    for bool_key in (
+        "enable_peer_context",
+        "enable_forum_digest",
+        "enable_rag_retrieval",
+        "emit_latent_reasoning_events",
+        "enable_pi_reason_then_action",
+    ):
+        raw = config.get(bool_key)
+        if raw is not None and not isinstance(raw, bool):
+            raise ValueError(
+                f"run_config '{bool_key}' must be a boolean (true/false), got {type(raw).__name__}: {raw!r}"
+            )
+
+    for int_key in (
+        "peer_context_cap",
+        "forum_digest_cap",
+        "memory_context_total_cap",
+        "memory_recent_events_cap",
+        "memory_recent_notebook_cap",
+        "notebook_consolidation_interval",
+    ):
+        raw = config.get(int_key)
+        if raw is not None:
+            val = int(raw)
+            if val < 0:
+                raise ValueError(f"run_config '{int_key}' must be non-negative, got {val}")
+            config[int_key] = val
+
+
 def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, object], dict[str, Path], Path] | None:
     if not config_path:
         return None
@@ -274,7 +376,10 @@ def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, 
     for hash_key, actual_hash in expected_hashes.items():
         expected = config.get(hash_key)
         if expected and expected != actual_hash:
-            print(f"[run_config warning] {hash_key} mismatch: expected {expected}, got {actual_hash}")
+            raise ValueError(
+                f"run_config hash mismatch for {hash_key}: expected {expected}, got {actual_hash}. "
+                "Update the run_config hash fields to match current source files before running."
+            )
         config.setdefault(hash_key, actual_hash)
 
     config.setdefault("constitution_seed_path", str(paths["constitution_seed_path"].relative_to(base_dir)))
@@ -283,6 +388,7 @@ def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, 
     config.setdefault("executor_templates_path", str(paths["executor_templates_path"].relative_to(base_dir)))
     if "prompt_pack_path" in paths:
         config.setdefault("prompt_pack_path", str(paths["prompt_pack_path"].relative_to(base_dir)))
+    _validate_run_config_modes(config)
     return config, paths, resolved_config_path
 
 
@@ -368,8 +474,10 @@ def main(
     if run_config_data is not None:
         run_config, run_config_paths, run_config_file = run_config_data
         config_version = str(run_config.get("config_version"))
-        if _version_gte(config_version, "0.9.9"):
-            raise SystemExit(f"run_config hard-stop reached at {config_version} (>= 0.9.9)")
+        if _version_gte(config_version, RUN_CONFIG_HARD_STOP_VERSION):
+            raise SystemExit(
+                f"run_config hard-stop reached at {config_version} (>= {RUN_CONFIG_HARD_STOP_VERSION})"
+            )
         ecosystem_id = str(run_config.get("ecosystem_id", ecosystem_id))
         agent_id = str(run_config.get("agent_id", agent_id))
         model_id = str(run_config.get("model_id", model_id or "claude-sonnet-4-6-20250514"))
@@ -437,6 +545,16 @@ def _run_inner(
     eval_writer = ChainWriter(storage.evaluation_ledger())
     writers = {"public": public_writer, "commons": commons_writer, "notebook": notebook_writer}
 
+    verifier_mode = str(run_config.get("verifier_mode", "warn")) if run_config is not None else "warn"
+    _verify_boundary(
+        eval_writer=eval_writer,
+        ledger_path=storage.public_ledger(),
+        boundary="start",
+        ecosystem_id=ecosystem_id,
+        agent_id=agent_id,
+        verifier_mode=verifier_mode,
+    )
+
     llm: LLMAdapter = create_adapter_auto(llm_model_spec)
 
     vocab = ActionVocabulary.load(action_vocabulary_path)
@@ -444,17 +562,40 @@ def _run_inner(
     if run_config is not None:
         blocked_leaves = set(str(leaf) for leaf in run_config.get("blocked_leaf_actions", []) if str(leaf).strip())
     policy = Policy(vocab, blocked_leaves=blocked_leaves)
+    public_writer.append(
+        "agent.policy.masks_applied",
+        {
+            "blocked_leaves": sorted(policy.blocked_leaves),
+            "source": "config" if blocked_leaves else "none",
+            "vocab_version": vocab.version,
+        },
+        ecosystem_id=ecosystem_id,
+        agent_id=agent_id,
+    )
+    # DEPRECATION(E4): Implicit defaults for memory caps below are deprecated.
+    # All run_config files should carry explicit values for these keys.
+    # Transition window: 2 config versions.  Removal target: v2.0.0.
     recent_events_cap = 20
     recent_notebook_cap = 5
     enable_rag = False
     rag_n_results = 5
     rag_min_relevance = 0.3
+    enable_peer_context = False
+    peer_context_cap = 0
+    enable_forum_digest = False
+    forum_digest_cap = 0
+    memory_context_total_cap = 0
     if run_config is not None:
         recent_events_cap = int(run_config.get("memory_recent_events_cap", recent_events_cap))
         recent_notebook_cap = int(run_config.get("memory_recent_notebook_cap", recent_notebook_cap))
         enable_rag = bool(run_config.get("enable_rag_retrieval", False))
         rag_n_results = int(run_config.get("rag_n_results", rag_n_results))
         rag_min_relevance = float(run_config.get("rag_min_relevance", rag_min_relevance))
+        enable_peer_context = bool(run_config.get("enable_peer_context", False))
+        peer_context_cap = int(run_config.get("peer_context_cap", 0))
+        enable_forum_digest = bool(run_config.get("enable_forum_digest", False))
+        forum_digest_cap = int(run_config.get("forum_digest_cap", 0))
+        memory_context_total_cap = int(run_config.get("memory_context_total_cap", 0))
     state_builder = StateBuilder(
         storage,
         agent_id,
@@ -464,6 +605,11 @@ def _run_inner(
         rag_n_results=rag_n_results,
         rag_min_relevance=rag_min_relevance,
         vectordb_dir=base_dir / ".vectordb",
+        enable_peer_context=enable_peer_context,
+        peer_context_cap=peer_context_cap,
+        enable_forum_digest=enable_forum_digest,
+        forum_digest_cap=forum_digest_cap,
+        memory_context_total_cap=memory_context_total_cap,
     )
     executor = Executor(
         llm=llm,
@@ -474,11 +620,7 @@ def _run_inner(
         zotero_api_key=os.getenv("ZOTERO_API_KEY"),
         zotero_library_id=os.getenv("ZOTERO_LIBRARY_ID"),
         config_version=str(run_config.get("config_version")) if run_config is not None else "unversioned",
-        tool_allowlist=(
-            set(str(tool) for tool in run_config.get("tool_allowlist", []))
-            if run_config is not None and isinstance(run_config.get("tool_allowlist"), list)
-            else None
-        ),
+        tool_allowlist=(set(str(tool) for tool in run_config.get("tool_allowlist", [])) if run_config is not None else None),
         emit_latent_reasoning_events=(
             bool(run_config.get("emit_latent_reasoning_events", False))
             if run_config is not None
@@ -509,11 +651,21 @@ def _run_inner(
             if run_config is not None
             else 4096
         ),
-        prompt_progression=(
-            str(run_config.get("prompt_progression", "off"))
-            if run_config is not None
-            else "off"
-        ),
+        prompt_progression=(str(run_config.get("prompt_progression", "off")) if run_config is not None else "off"),
+    )
+    # Secure-by-default: when run_config is present but omits tool_allowlist,
+    # _parse_tool_allowlist(None) → set() → sorted to [].  The runner then
+    # passes set() to Executor, blocking all tools.  When run_config is absent,
+    # None is passed (allow-all).  This is intentional: using a run_config opts
+    # the operator into explicit tool governance.
+    public_writer.append(
+        "agent.tool.allowlist_applied",
+        {
+            "tool_allowlist": sorted(executor.tool_allowlist) if executor.tool_allowlist is not None else None,
+            "policy": "allow_all" if executor.tool_allowlist is None else "explicit_list",
+        },
+        ecosystem_id=ecosystem_id,
+        agent_id=agent_id,
     )
     constitution = ConstitutionManager(storage, agent_id)
     monitor = KillSwitchMonitor(
@@ -523,6 +675,10 @@ def _run_inner(
         reward_mode=str(run_config.get("reward_mode", "sparse")) if run_config is not None else "sparse",
     )
     monitor.arm(agent_id=agent_id, rubric_version="0.1.0")
+
+    notebook_consolidation_interval = 0
+    if run_config is not None:
+        notebook_consolidation_interval = int(run_config.get("notebook_consolidation_interval", 0))
 
     s3_sync_interval = 300
     if run_config is not None:
@@ -648,17 +804,37 @@ def _run_inner(
                 )
             )
 
+            if (
+                notebook_consolidation_interval > 0
+                and decision_number % notebook_consolidation_interval == 0
+            ):
+                try:
+                    consolidate_older_entries(
+                        storage.agent_notebook(agent_id),
+                        recent_cap=recent_notebook_cap,
+                    )
+                except Exception as consolidation_exc:
+                    print(f"[consolidation] error at decision {decision_number}, continuing: {consolidation_exc}")
+
         _log_run_summary(
             public_writer, constitution, storage.public_ledger(),
             ecosystem_id, agent_id, max_decisions, run_seed,
             artifacts_stored=storage.count_artifacts(agent_id),
             run_config=run_config,
         )
+        _verify_boundary(
+            eval_writer=eval_writer,
+            ledger_path=storage.public_ledger(),
+            boundary="terminal",
+            ecosystem_id=ecosystem_id,
+            agent_id=agent_id,
+            verifier_mode=verifier_mode,
+        )
         monitor.evaluate(
             EventEnvelope(
                 schema_version="0.1.0",
                 event_id="heartbeat-run-completed",
-                event_type="agent.run.completed",
+                event_type="run.completed",
                 ecosystem_id=ecosystem_id,
                 agent_id=agent_id,
                 wall_time="1970-01-01T00:00:00.000000Z",

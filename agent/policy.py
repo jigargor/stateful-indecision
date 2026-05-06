@@ -16,7 +16,15 @@ class ActionDistribution:
 class Policy:
     def __init__(self, action_vocab: ActionVocabulary, blocked_leaves: set[str] | None = None):
         self.vocab = action_vocab
-        self.blocked_leaves = blocked_leaves or set()
+        raw = blocked_leaves or set()
+        all_known = set(action_vocab.all_leaves)
+        unknown = raw - all_known
+        if unknown:
+            raise ValueError(
+                f"blocked_leaf_actions contains unknown leaf names: {sorted(unknown)}. "
+                f"Known leaves: {sorted(all_known)}"
+            )
+        self.blocked_leaves: frozenset[str] = frozenset(raw)
 
     def _allowed_leaves(self, top: str) -> list[str]:
         return [leaf for leaf in self.vocab.categories.get(top, []) if leaf not in self.blocked_leaves]
@@ -34,14 +42,16 @@ class Policy:
                 if affinity > 0:
                     top_scores[top] += affinity
 
-        # If the working notebook context is saturated, prefer outward research.
+        # Contextual biases only apply to categories that have allowed leaves.
         if getattr(state, "recent_notebook", None) and len(state.recent_notebook) >= 5:
-            top_scores["RESEARCH"] = top_scores.get("RESEARCH", 1.0) * 1.25
-            top_scores["PONDER"] = top_scores.get("PONDER", 1.0) * 0.85
+            if "RESEARCH" in top_scores:
+                top_scores["RESEARCH"] *= 1.25
+            if "PONDER" in top_scores:
+                top_scores["PONDER"] *= 0.85
 
-        # If the agent is not already in commons, bias slightly toward social discovery.
         if not getattr(state, "in_commons", False):
-            top_scores["RIFF"] = top_scores.get("RIFF", 1.0) * 1.10
+            if "RIFF" in top_scores:
+                top_scores["RIFF"] *= 1.10
 
         top_total = sum(top_scores.values())
         if top_total <= 0:
