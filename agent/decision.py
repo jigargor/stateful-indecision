@@ -72,6 +72,8 @@ def step(
     ecosystem_id: str,
     rng: random.Random,
     enable_pi_reason_then_action: bool = False,
+    decision_number: int = 1,
+    max_decisions: int = 100,
 ) -> StepResult:
     snapshot = state_builder.build()
     snapshot_payload = AgentStateSnapshottedPayload(
@@ -137,7 +139,14 @@ def step(
         ecosystem_id=ecosystem_id,
         agent_id=agent_id,
     )
-    result = executor.execute(top_action, sub_action, snapshot, writers)
+    result = executor.execute(
+        top_action,
+        sub_action,
+        snapshot,
+        writers,
+        decision_number=decision_number,
+        max_decisions=max_decisions,
+    )
     metrics = result.llm_response
     action_executed_payload = ActionExecutedPayload(
         top_action=top_action,

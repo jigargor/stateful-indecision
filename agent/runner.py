@@ -23,6 +23,63 @@ from safety.kill_switch import KillSwitchMonitor
 from schemas.events import ActionVocabulary, EventEnvelope
 
 
+def _maybe_inject_external_townhall_visitor(
+    *,
+    storage: EcosystemStorage,
+    public_writer: ChainWriter,
+    run_config: dict[str, object] | None,
+) -> None:
+    """Append a closed external-visitor townhall session when `townhall_visitor` is set on run_config.
+
+    Skips if the ledger already ends with the same visitor topic (session_kind external_visitor) so
+    multi-agent waves do not duplicate identical briefings.
+    """
+    if run_config is None:
+        return
+    raw = run_config.get("townhall_visitor")
+    if not isinstance(raw, dict):
+        return
+    topic = str(raw.get("topic", "")).strip()
+    if not topic:
+        return
+
+    from forums.townhall import Townhall
+
+    th_path = storage.townhall_ledger()
+    if th_path.exists():
+        lines = [ln for ln in th_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        last_visitor_topic: str | None = None
+        for ln in reversed(lines):
+            try:
+                ev = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("event_type") != "townhall.convened":
+                continue
+            p = ev.get("payload") or {}
+            if p.get("session_kind") == "external_visitor":
+                last_visitor_topic = str(p.get("topic", "")).strip()
+                break
+        if last_visitor_topic == topic:
+            return
+
+    speaker_id = str(raw.get("speaker_id", "external-expert")).strip() or "external-expert"
+    bridge = str(raw.get("tangential_bridge", raw.get("relation_to_team_work", ""))).strip()
+    brief = str(raw.get("brief", raw.get("message", ""))).strip()
+    th = Townhall(ChainWriter(th_path), public_writer, storage.ecosystem_id)
+    th.convene(
+        speaker_id,
+        topic,
+        session_kind="external_visitor",
+        tangential_bridge=bridge or None,
+    )
+    to_broadcast = brief if brief else topic
+    if len(to_broadcast) > 8000:
+        to_broadcast = to_broadcast[:8000] + "…"
+    th.broadcast(speaker_id, to_broadcast)
+    th.adjourn(speaker_id)
+
+
 def _try_s3_sync(storage: EcosystemStorage, base_dir: Path, run_config: dict | None, mode: str = "once") -> None:
     """Best-effort S3 sync; never raises."""
     try:
@@ -452,6 +509,11 @@ def _run_inner(
             if run_config is not None
             else 4096
         ),
+        prompt_progression=(
+            str(run_config.get("prompt_progression", "off"))
+            if run_config is not None
+            else "off"
+        ),
     )
     constitution = ConstitutionManager(storage, agent_id)
     monitor = KillSwitchMonitor(
@@ -534,6 +596,12 @@ def _run_inner(
                     break
             print()
 
+        _maybe_inject_external_townhall_visitor(
+            storage=storage,
+            public_writer=public_writer,
+            run_config=run_config,
+        )
+
         for decision_number in range(1, max_decisions + 1):
             result = step(
                 policy=policy,
@@ -548,6 +616,8 @@ def _run_inner(
                     if run_config is not None
                     else False
                 ),
+                decision_number=decision_number,
+                max_decisions=max_decisions,
             )
             key = f"{result.top_action}/{result.sub_action}"
             action_tally[key] = action_tally.get(key, 0) + 1

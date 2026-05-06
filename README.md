@@ -146,6 +146,8 @@ When `S3_OFFLOAD_ENABLED=1`, the entrypoint uses a Python supervisor that handle
 
 S3 bucket layout mirrors the local filesystem: `s3://<bucket>/<prefix>/ecosystems/<id>/...`. Sync state is tracked in `.sync_state/<ecosystem>.json` (excluded from the image via `.dockerignore`). Research artifacts are bundled as tarballs by default (`S3_RESEARCH_MODE=bundle`).
 
+After restoring or syncing data locally, periodic batch analytics can merge ledgers into Parquet and extract research bodies separately: `uv sync --extra etl` then `uv run python -m tools.batch_etl --base-dir . --out-dir ./etl_warehouse` (see `AGENTS.md`).
+
 See `.env.example` for the full list of S3 env vars, and `_plans/s3_data_offload_design.md` for the complete design document.
 
 ### Spot-Instance Termination

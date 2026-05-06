@@ -24,6 +24,7 @@ class StateSnapshot:
     in_commons: bool
     embedding_blob_ref: str | None
     retrieved_context: list[dict] = field(default_factory=list)
+    external_visitor_briefing: str | None = None
 
 
 class StateBuilder:
@@ -87,6 +88,8 @@ class StateBuilder:
                 recent_events, recent_notebook, field_chosen
             )
 
+        external_visitor_briefing = self._latest_external_visitor_briefing(self.storage.townhall_ledger())
+
         return StateSnapshot(
             snapshot_id=str(uuid4()),
             constitution_text=constitution_text,
@@ -98,7 +101,50 @@ class StateBuilder:
             in_commons=in_commons,
             embedding_blob_ref=embedding_blob_ref,
             retrieved_context=retrieved_context,
+            external_visitor_briefing=external_visitor_briefing,
         )
+
+    @staticmethod
+    def _latest_external_visitor_briefing(townhall_path: Path) -> str | None:
+        """Summarize the most recent external-visitor townhall session from the ecosystem ledger."""
+        if not townhall_path.exists():
+            return None
+        events: list[dict] = []
+        for line in townhall_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+        convene_idx: int | None = None
+        for i in range(len(events) - 1, -1, -1):
+            ev = events[i]
+            if ev.get("event_type") != "townhall.convened":
+                continue
+            payload = ev.get("payload") or {}
+            if payload.get("session_kind") != "external_visitor":
+                continue
+            convene_idx = i
+            break
+        if convene_idx is None:
+            return None
+        convene_payload = events[convene_idx].get("payload") or {}
+        speaker = str(convene_payload.get("speaker_id", "external-expert"))
+        topic = str(convene_payload.get("topic", "")).strip()
+        bridge = str(convene_payload.get("tangential_bridge", "")).strip()
+        broadcast_text = ""
+        for j in range(convene_idx + 1, len(events)):
+            e2 = events[j]
+            et = e2.get("event_type")
+            if et == "townhall.adjourned":
+                break
+            if et == "townhall.convened":
+                break
+            if et == "townhall.broadcast":
+                broadcast_text = str((e2.get("payload") or {}).get("text", "") or "").strip()
+        lines_out: list[str] = [f"External visitor ({speaker}) — topic: {topic or '(no topic line)'}"]
+        if bridge:
+            lines_out.append(f"Tangential bridge to your research: {bridge}")
+        if broadcast_text:
+            lines_out.append(f"Visitor message: {broadcast_text}")
+        return "\n".join(lines_out)
 
     @staticmethod
     def _load_jsonl(path) -> list[dict]:

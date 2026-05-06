@@ -193,6 +193,18 @@ class TestTownhall:
         assert event["event_type"] == "townhall.convened"
         assert event["payload"]["topic"] == "quarterly update"
 
+    def test_convene_external_visitor_payload(self, tmp_path) -> None:
+        th, th_path, _ = self._make_townhall(tmp_path)
+        th.convene(
+            "visitor-astrobiology",
+            "Biosignature false positives in telescope surveys",
+            session_kind="external_visitor",
+            tangential_bridge="Analogous to false-positive cascades in epistemic networks.",
+        )
+        event = json.loads(th_path.read_text(encoding="utf-8").splitlines()[0])
+        assert event["payload"]["session_kind"] == "external_visitor"
+        assert "epistemic" in event["payload"]["tangential_bridge"]
+
     def test_broadcast_only_by_speaker(self, tmp_path) -> None:
         th, _, _ = self._make_townhall(tmp_path)
         th.convene("speaker-001", "topic")

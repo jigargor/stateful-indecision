@@ -17,6 +17,8 @@
 - `ecosystems/<id>/evaluation.jsonl` - safety and verifier outcomes
 - `ecosystems/<id>/commons.jsonl` - commons interactions
 - `ecosystems/<id>/roundtable.jsonl` / `townhall.jsonl` - structured forum streams
+- **External townhall visitor:** set `townhall_visitor` on `run_config` to append a closed `session_kind: "external_visitor"` townhall (topic, optional `tangential_bridge` / `relation_to_team_work`, optional `brief`) before the decision loop. `StateBuilder` surfaces the latest visitor briefing on every snapshot so agents can connect tangentially without flattening domains. Re-injection is skipped when the ledger already contains the same visitor `topic` (multi-agent waves share one briefing).
+- **Prompt progression:** `prompt_progression` on `run_config` — `off` (default), `standard`, or `aggressive` — adds per-step escalation hints tied to `decision_number` / `max_decisions` (stronger depth, steel-manning, and synthesis pressure in aggressive mode).
 - `ecosystems/<id>/agents/<agent-id>/notebook.jsonl` - durable notebook entries
 - `ecosystems/<id>/agents/<agent-id>/constitution.md` - mutable constitution with frontmatter
 
@@ -33,6 +35,9 @@
   - `python -m tools.verify_chains --ecosystem beta`
 - Export sqlite for dashboards:
   - `python -m tools.export_to_sqlite --db dashboard.db --base-dir .`
+- Periodic batch ETL (Parquet tabular + separate research JSONL; requires `uv sync --extra etl`):
+  - `uv run python -m tools.batch_etl --base-dir . --out-dir ./etl_warehouse`
+- Notebook sharing + overlap proxy for “net new phrasing” vs corpus (and optional `action.executed` raw text): `python -m tools.notebook_novelty --ecosystem beta --base-dir . --export-dir ./share_exports` (add `--include-executed-raw` to widen the source pool).
 
 ## Coding Standards
 - Prefer explicit typed payloads over freeform dictionaries where practical.

@@ -45,7 +45,10 @@ ACTION_TEMPLATES: dict[str, dict[str, str]] = {
         "COLLABORATE": "Outline a collaboration proposal: what you bring, what you need, what the joint outcome could be.",
         "TEACH": "Explain a core idea from your recent work as if to someone encountering it for the first time. Prioritize clarity over completeness.",
         "ORCHESTRATE": "Organize your current threads of work into a coherent plan. Identify what should happen next, what depends on what, and what can be deferred.",
-        "CALL_TOWNHALL": "Convene a townhall: broadcast a short announcement about your current work or a finding, then adjourn. Keep it under 280 characters.",
+        "CALL_TOWNHALL": (
+            "Convene a townhall as this agent: broadcast a short announcement about your current work or a finding, then adjourn. "
+            "Keep it under 280 characters. This is separate from any external visitor session recorded in the townhall ledger."
+        ),
     },
     "INDULGE": {
         "INNOVATE": "Propose something genuinely new — a method, framing, or connection that doesn't exist in your current records. Justify why it's worth pursuing.",
@@ -88,6 +91,32 @@ SUB_ACTION_ROLE_MAP: dict[str, str] = {
 REFLECTION_SUB_ACTIONS = {"THINK_DEEPLY", "DEEP_PATTERN_RECOGNITION"}
 
 
+def _prompt_progression_clause(mode: str, decision_number: int, max_decisions: int) -> str:
+    if mode not in {"standard", "aggressive"} or max_decisions < 1:
+        return ""
+    if max_decisions == 1:
+        t = 1.0
+    else:
+        t = (decision_number - 1) / (max_decisions - 1)
+    if mode == "standard":
+        if t < 0.34:
+            phase, hint = "orientation", "Explore broadly; map competing frames before committing."
+        elif t < 0.67:
+            phase, hint = "compression", "Deepen one thread: tighten claims and name what evidence would change your mind."
+        else:
+            phase, hint = "integration", "Synthesize across threads; state the main crux and one concrete falsifier."
+    else:
+        if t < 0.25:
+            phase, hint = "diverge", "Force breadth: name at least three distinct hypotheses or frames; avoid paraphrasing prior notebook lines."
+        elif t < 0.5:
+            phase, hint = "stress_test", "Pick one thread and attack it: hidden assumptions, failure modes, missing evidence."
+        elif t < 0.75:
+            phase, hint = "steel_man", "State the strongest counterposition fairly, then your rebuttal; mark uncertainty sharply."
+        else:
+            phase, hint = "deliver", "Integrated takeaway in a few tight bullets plus explicit unknowns; ban generic research platitudes."
+    return f"\n\nRun progression: step {decision_number}/{max_decisions} ({phase}). {hint}"
+
+
 @dataclass
 class ExecutionResult:
     raw_output: str
@@ -115,6 +144,7 @@ class Executor:
         research_seed_doc_ids: list[str] | None = None,
         llm_effort: str | None = None,
         llm_max_tokens: int = 4096,
+        prompt_progression: str = "off",
     ):
         self.llm = llm
         self.storage = storage
@@ -131,6 +161,8 @@ class Executor:
         ]
         self.llm_effort = llm_effort.strip() if llm_effort and llm_effort.strip() else None
         self.llm_max_tokens = llm_max_tokens
+        pp = (prompt_progression or "off").strip().lower()
+        self.prompt_progression = pp if pp in {"off", "standard", "aggressive"} else "off"
 
     def execute(
         self,
@@ -138,11 +170,16 @@ class Executor:
         sub_action: str,
         snapshot: StateSnapshot,
         writers: dict[str, "ChainWriter"],
+        *,
+        decision_number: int = 1,
+        max_decisions: int = 1,
     ) -> ExecutionResult:
         system = (
             "You are a constrained single-agent research process.\n"
             "Your constitution defines who you are and what you care about.\n"
             "Stay within your chosen field unless the action explicitly asks you to range freely.\n"
+            "If an external visitor briefing appears in the user message, treat it as optional cross-domain context: "
+            "connect to it only when the link is substantive; do not abandon your field mandate.\n"
             "If you discover a method, tool, or workflow that is more efficient than your current approach, "
             "you may author a skill document describing it (treat this as PRACTICE/WRITE + RESEARCH/DISCOVER).\n\n"
             f"--- CONSTITUTION ---\n{snapshot.constitution_text}\n--- END CONSTITUTION ---"
@@ -155,12 +192,19 @@ class Executor:
             system = f"{system}\n\nRuntime effort target: {self.llm_effort}."
         if team_instruction:
             prompt = f"{prompt}\n\nAdditional team protocol:\n{team_instruction}"
+        progression = _prompt_progression_clause(self.prompt_progression, decision_number, max_decisions)
+        if progression:
+            prompt = f"{prompt}{progression}"
+        visitor_block = ""
+        if snapshot.external_visitor_briefing:
+            visitor_block = f"External townhall visitor (context):\n{snapshot.external_visitor_briefing}\n\n"
         messages = [
             {
                 "role": "user",
                 "content": (
                     f"Action: {top_action}/{sub_action}\n"
                     f"Field: {snapshot.field_chosen}\n"
+                    f"{visitor_block}"
                     f"Recent notebook ({len(snapshot.recent_notebook)} entries): {snapshot.recent_notebook}\n"
                     f"Notebook summary: {snapshot.recent_notebook_summary}\n"
                     f"Instruction: {prompt}"

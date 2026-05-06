@@ -20,6 +20,9 @@ dev = [
 s3 = [
     "boto3>=1.34,<2",
 ]
+etl = [
+    "pyarrow>=15,<20",
+]
 rag = [
     "chromadb>=0.5",
     "voyageai>=0.3",

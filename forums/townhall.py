@@ -26,9 +26,20 @@ class Townhall(ForumBase):
     def event_prefix(self) -> str:
         return "townhall"
 
-    def convene(self, speaker_id: str, topic: str) -> str:
+    def convene(
+        self,
+        speaker_id: str,
+        topic: str,
+        *,
+        session_kind: str | None = None,
+        tangential_bridge: str | None = None,
+    ) -> str:
         event_id = str(uuid4())
-        payload = {"speaker_id": speaker_id, "topic": topic}
+        payload: dict[str, object] = {"speaker_id": speaker_id, "topic": topic}
+        if session_kind:
+            payload["session_kind"] = session_kind
+        if tangential_bridge:
+            payload["tangential_bridge"] = tangential_bridge
         self._dual_write("townhall.convened", payload, speaker_id, event_id)
         self._speaker_id = speaker_id
         self._convened = True
