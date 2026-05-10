@@ -2,6 +2,18 @@
 
 Quick path from repo data to `tools/grafana_dashboard_template.json`.
 
+## Static PNG/HTML (no Grafana)
+
+To generate charts without installing Grafana:
+
+```bash
+uv sync --extra charts
+uv run python -m tools.export_to_sqlite --db exports/dashboard.db --base-dir .
+uv run python -m tools.render_dashboard_graphs --base-dir . --db exports/dashboard.db --out-dir exports/dashboard_graphs
+```
+
+Open `exports/dashboard_graphs/index.html` in a browser (or open the `.png` files directly).
+
 ## 1. Export SQLite (from repo root)
 
 ```bash

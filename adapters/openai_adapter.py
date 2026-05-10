@@ -13,8 +13,12 @@ class OpenAIAdapter:
 
     def __init__(self, model_id: str, api_key: str | None = None, base_url: str | None = None):
         self.model_id = model_id
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.base_url = base_url
+        resolved = api_key if api_key else os.getenv("OPENAI_API_KEY", "")
+        # Local OpenAI-compatible servers (Ollama, LM Studio, vLLM) often ignore the key.
+        if not resolved and base_url:
+            resolved = "local-openai-compat"
+        self.api_key = resolved
 
     def complete(
         self,
@@ -25,7 +29,7 @@ class OpenAIAdapter:
         temperature: float = 0.7,
     ) -> LLMResponse:
         if not self.api_key:
-            raise LLMError("OPENAI_API_KEY is not set")
+            raise LLMError("OPENAI_API_KEY is not set (set the env var or provide openai_base_url for local servers)")
         try:
             from openai import OpenAI
         except ImportError as exc:

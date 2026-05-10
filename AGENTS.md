@@ -30,12 +30,14 @@
 - Ecosystem IDs must pass the validated grammar (lowercase alphanumeric + hyphens, no reserved words).
 
 ## Operational Commands
+- New ecosystem IDs, reset tiers (full / partial / model-only), integrations, and OpenAI-compatible local endpoints: `docs/ecosystem-bootstrap.md` (examples `run_config_oss_local.example.json`, `run_config_oss_llamacpp.json`). Optional local GGUF server stack: `uv sync --extra local-llm`.
 - Run tests: `uv run pytest -q`
 - Verify chains (supports any validated ecosystem ID):
   - `uv run python -m tools.verify_chains --ecosystem alpha`
   - `uv run python -m tools.verify_chains --ecosystem beta`
 - Export sqlite for dashboards:
   - `uv run python -m tools.export_to_sqlite --db dashboard.db --base-dir .`
+- Static PNG/HTML charts from the same SQLite export (no Grafana): `uv sync --extra charts` then `uv run python -m tools.render_dashboard_graphs --base-dir . --db exports/dashboard.db --out-dir exports/dashboard_graphs` (see `tools/README-Grafana.md`).
 - Export event schemas (regenerate after payload model changes):
   - `uv run python -m tools.export_event_schemas`
 - Periodic batch ETL (Parquet tabular + separate research JSONL; requires `uv sync --extra etl`):

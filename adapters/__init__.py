@@ -14,6 +14,14 @@ PROVIDER_MAP: dict[str, type] = {
 }
 
 
+def _resolve_openai_base_url(explicit: str | None) -> str | None:
+    """Prefer run_config override, then OPENAI_BASE_URL (Ollama / LM Studio / vLLM)."""
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    env = os.getenv("OPENAI_BASE_URL")
+    return env.strip() if env and env.strip() else None
+
+
 def create_adapter(
     provider: str,
     model_id: str,
@@ -29,22 +37,47 @@ def create_adapter(
     return cls(model_id=model_id, **kwargs)
 
 
-def create_adapter_auto(model_spec: str | None = None) -> LLMAdapter:
+def create_adapter_auto(
+    model_spec: str | None = None,
+    *,
+    openai_base_url: str | None = None,
+) -> LLMAdapter:
     """Create an adapter from a 'provider:model_id' string, or fall back to
-    env defaults, or fall back to mock."""
+    env defaults, or fall back to mock.
+
+    For OpenAI-compatible local servers, set ``openai_base_url`` in run_config and/or
+    ``OPENAI_BASE_URL``; ``OPENAI_API_KEY`` may be omitted when a base URL is set
+    (see ``OpenAIAdapter``).
+    """
+    resolved_base = _resolve_openai_base_url(openai_base_url)
+
     if model_spec and ":" in model_spec:
         provider, model_id = model_spec.split(":", 1)
-        return create_adapter(provider, model_id)
+        kwargs: dict = {}
+        if provider == "openai" and resolved_base:
+            kwargs["base_url"] = resolved_base
+
+        key_map = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+        required_key = key_map.get(provider, "")
+        openai_local = provider == "openai" and resolved_base is not None
+        if required_key and not os.getenv(required_key) and not openai_local:
+            return MockAdapter(model_id=f"mock-fallback-{model_id}")
+
+        return create_adapter(provider, model_id, **kwargs)
 
     provider = os.getenv("DEFAULT_PROVIDER", "anthropic")
     model_id = model_spec or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-6-20250514")
 
     key_map = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
     required_key = key_map.get(provider, "")
-    if required_key and not os.getenv(required_key):
+    openai_local = provider == "openai" and resolved_base is not None
+    if required_key and not os.getenv(required_key) and not openai_local:
         return MockAdapter(model_id=f"mock-fallback-{model_id}")
 
-    return create_adapter(provider, model_id)
+    kwargs = {}
+    if provider == "openai" and resolved_base:
+        kwargs["base_url"] = resolved_base
+    return create_adapter(provider, model_id, **kwargs)
 
 
 __all__ = [

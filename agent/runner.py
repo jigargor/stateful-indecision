@@ -327,6 +327,17 @@ def _validate_run_config_modes(config: dict[str, object]) -> None:
                 raise ValueError(f"run_config '{int_key}' must be non-negative, got {val}")
             config[int_key] = val
 
+    raw_ob = config.get("openai_base_url")
+    if raw_ob is not None:
+        if not isinstance(raw_ob, str):
+            raise ValueError(
+                f"run_config 'openai_base_url' must be a string when set, got {type(raw_ob).__name__}: {raw_ob!r}"
+            )
+        stripped = raw_ob.strip()
+        if not stripped:
+            raise ValueError("run_config 'openai_base_url' must be a non-empty string when set")
+        config["openai_base_url"] = stripped
+
 
 def load_run_config(base_dir: Path, config_path: str | None) -> tuple[dict[str, object], dict[str, Path], Path] | None:
     if not config_path:
@@ -499,6 +510,11 @@ def main(
     if "evaluation.jsonl" not in storage.blocked_for_agent():
         raise RuntimeError("blocked_for_agent sanity check failed")
 
+    openai_base_url: str | None = None
+    if run_config is not None:
+        ou = run_config.get("openai_base_url")
+        openai_base_url = ou if isinstance(ou, str) else None
+
     with storage.acquire_run_lock(agent_id):
         _run_inner(
             storage=storage,
@@ -506,6 +522,7 @@ def main(
             agent_id=agent_id,
             base_dir=base_dir,
             llm_model_spec=model_spec or model_id,
+            openai_base_url=openai_base_url,
             max_decisions=max_decisions,
             seed=seed,
             verbose=verbose,
@@ -529,6 +546,7 @@ def _run_inner(
     agent_id: str,
     base_dir: Path,
     llm_model_spec: str,
+    openai_base_url: str | None,
     max_decisions: int,
     seed: int | None,
     verbose: bool,
@@ -555,7 +573,7 @@ def _run_inner(
         verifier_mode=verifier_mode,
     )
 
-    llm: LLMAdapter = create_adapter_auto(llm_model_spec)
+    llm: LLMAdapter = create_adapter_auto(llm_model_spec, openai_base_url=openai_base_url)
 
     vocab = ActionVocabulary.load(action_vocabulary_path)
     blocked_leaves = set()

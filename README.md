@@ -32,6 +32,10 @@ What is not in v1 scope (deferred to v2+):
 - State-conditioned policy (currently frozen-uniform with masks)
 - User-facing UI (everything is CLI + ledger files)
 
+## New ecosystems and resets
+
+See **[docs/ecosystem-bootstrap.md](docs/ecosystem-bootstrap.md)** for ecosystem IDs, full vs partial vs model-only resets, integrations, and **local OpenAI-compatible** (`openai:` + `OPENAI_BASE_URL` / `openai_base_url`) setups. Example configs: `run_config_oss_local.example.json`, `run_config_oss_llamacpp.json` (with `uv sync --extra local-llm` + GGUF under `.models/`).
+
 ## Quickstart
 
 ```bash

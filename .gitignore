@@ -23,9 +23,15 @@ ecosystems/*/.run.lock
 *.db
 grafana/
 
+# Static charts from tools/render_dashboard_graphs.py (optional to commit)
+exports/dashboard_graphs/
+
 # RAG vector store and sync state
 .vectordb/
 .sync_state/
+
+# Local GGUF weights (llama.cpp / etc.)
+.models/
 
 # leaving cursor out until I know which skills I want
 .cursor/
