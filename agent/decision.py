@@ -111,6 +111,17 @@ def step(
         ecosystem_id=ecosystem_id,
         agent_id=agent_id,
     )
+    for audit in snapshot.shared_knowledge_audits:
+        event_type = audit.get("event_type")
+        payload = audit.get("payload", {})
+        if not isinstance(event_type, str):
+            continue
+        writers["public"].append(
+            event_type,
+            payload if isinstance(payload, dict) else {},
+            ecosystem_id=ecosystem_id,
+            agent_id=agent_id,
+        )
 
     dist = policy.propose(snapshot)
     if enable_pi_reason_then_action:

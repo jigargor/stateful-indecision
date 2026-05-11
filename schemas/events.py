@@ -172,6 +172,30 @@ class VerifierBoundaryCheckedPayload(BaseModel):
     verifier_mode: str
 
 
+class SharedKnowledgeRetrievalAllowedPayload(BaseModel):
+    family_id: str
+    access_profile: str
+    grant_version: int
+    grants_hash: str
+    reason: str
+    query_preview: str
+
+
+class SharedKnowledgeRetrievalDeniedPayload(BaseModel):
+    family_id: str
+    access_profile: str
+    reason: str
+
+
+class SharedKnowledgeContextUsedPayload(BaseModel):
+    family_id: str
+    access_profile: str
+    grant_version: int
+    grants_hash: str
+    result_count: int
+    promotion_ids: list[str] = Field(default_factory=list)
+
+
 class IndulgeRequestedPayload(BaseModel):
     request_text: str
     motivation: str
@@ -341,6 +365,9 @@ KNOWN_EVENT_PAYLOAD_MODELS: dict[str, type[BaseModel]] = {
     "agent.policy.masks_applied": PolicyMasksAppliedPayload,
     "agent.tool.allowlist_applied": ToolAllowlistAppliedPayload,
     "verifier.boundary_checked": VerifierBoundaryCheckedPayload,
+    "shared_knowledge.retrieval_allowed": SharedKnowledgeRetrievalAllowedPayload,
+    "shared_knowledge.retrieval_denied": SharedKnowledgeRetrievalDeniedPayload,
+    "shared_knowledge.context_used": SharedKnowledgeContextUsedPayload,
     "indulge.requested": IndulgeRequestedPayload,
     "indulge.responded": IndulgeRespondedPayload,
     "agent.instantiated": AgentInstantiatedPayload,

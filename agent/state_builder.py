@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent.constitution_manager import ConstitutionManager
+from infra.shared_knowledge import evaluate_access, load_grant_state
 from infra.storage import EcosystemStorage
 from safety.firewalls import validate_agent_access
 
@@ -52,6 +53,7 @@ class StateSnapshot:
     external_visitor_briefing: str | None = None
     peer_context: list[ContextSegment] = field(default_factory=list)
     forum_digest: list[ContextSegment] = field(default_factory=list)
+    shared_knowledge_audits: list[dict] = field(default_factory=list)
 
 
 class StateBuilder:
@@ -72,6 +74,13 @@ class StateBuilder:
         enable_forum_digest: bool = False,
         forum_digest_cap: int = 0,
         memory_context_total_cap: int = 0,
+        enable_shared_knowledge_retrieval: bool = False,
+        shared_knowledge_family_id: str | None = None,
+        shared_knowledge_access_profile: str = "default",
+        shared_knowledge_collection: str = "shared_knowledge",
+        shared_knowledge_n_results: int = 5,
+        shared_knowledge_min_relevance: float = 0.3,
+        shared_knowledge_grant_max_age_sec: int = 86400,
     ):
         self.storage = storage
         self.agent_id = agent_id
@@ -88,6 +97,13 @@ class StateBuilder:
         self.enable_forum_digest = enable_forum_digest
         self.forum_digest_cap = forum_digest_cap
         self.memory_context_total_cap = memory_context_total_cap
+        self.enable_shared_knowledge_retrieval = enable_shared_knowledge_retrieval
+        self.shared_knowledge_family_id = shared_knowledge_family_id
+        self.shared_knowledge_access_profile = shared_knowledge_access_profile
+        self.shared_knowledge_collection = shared_knowledge_collection
+        self.shared_knowledge_n_results = shared_knowledge_n_results
+        self.shared_knowledge_min_relevance = shared_knowledge_min_relevance
+        self.shared_knowledge_grant_max_age_sec = shared_knowledge_grant_max_age_sec
 
     def build(self) -> StateSnapshot:
         public_path = self.storage.public_ledger()
@@ -127,9 +143,12 @@ class StateBuilder:
 
         retrieved_context: list[dict] = []
         embedding_blob_ref: str | None = None
+        shared_knowledge_audits: list[dict] = []
         if self.enable_rag:
-            retrieved_context, embedding_blob_ref = self._retrieve_context(
-                recent_events, recent_notebook, field_chosen
+            retrieved_context, embedding_blob_ref, shared_knowledge_audits = self._retrieve_context(
+                recent_events,
+                recent_notebook,
+                field_chosen,
             )
 
         external_visitor_briefing = self._latest_external_visitor_briefing(townhall_path)
@@ -161,6 +180,7 @@ class StateBuilder:
             external_visitor_briefing=external_visitor_briefing,
             peer_context=peer_context,
             forum_digest=forum_digest,
+            shared_knowledge_audits=shared_knowledge_audits,
         )
 
     @staticmethod
@@ -246,25 +266,25 @@ class StateBuilder:
         recent_events: list[dict],
         recent_notebook: list[str],
         field_chosen: str | None,
-    ) -> tuple[list[dict], str | None]:
+    ) -> tuple[list[dict], str | None, list[dict]]:
         """Query the vector store for relevant research artifacts and corpora."""
         try:
             from infra.embeddings import get_embedder
             from infra.vector_store import VectorStore
         except ImportError:
             logger.debug("RAG dependencies not installed, skipping retrieval")
-            return [], None
+            return [], None, []
 
         try:
             store = VectorStore(persist_dir=self.vectordb_dir)
             embedder = get_embedder()
         except Exception as exc:
             logger.warning("Failed to initialize RAG components: %s", exc)
-            return [], None
+            return [], None, []
 
         query_text = self._build_rag_query(recent_events, recent_notebook, field_chosen)
         if not query_text.strip():
-            return [], None
+            return [], None, []
 
         try:
             results = store.query(
@@ -276,9 +296,10 @@ class StateBuilder:
             )
         except Exception as exc:
             logger.warning("RAG query failed: %s", exc)
-            return [], None
+            return [], None, []
 
         context_entries = []
+        shared_knowledge_audits: list[dict] = []
         for doc_id, document, metadata, distance in zip(
             results.ids, results.documents, results.metadatas, results.distances
         ):
@@ -291,8 +312,120 @@ class StateBuilder:
                 "source_type": metadata.get("source_type", ""),
             })
 
+        if self.enable_shared_knowledge_retrieval and self.shared_knowledge_family_id:
+            shared_entries, shared_audits = self._retrieve_shared_context(
+                query_text=query_text,
+                store=store,
+                embedder=embedder,
+            )
+            context_entries.extend(shared_entries)
+            shared_knowledge_audits.extend(shared_audits)
+
         blob_ref = f"rag:{self.rag_collection}:{len(context_entries)}" if context_entries else None
-        return context_entries, blob_ref
+        return context_entries, blob_ref, shared_knowledge_audits
+
+    def _retrieve_shared_context(
+        self,
+        *,
+        query_text: str,
+        store,
+        embedder,
+    ) -> tuple[list[dict], list[dict]]:
+        if not self.shared_knowledge_family_id:
+            return [], []
+
+        audits: list[dict] = []
+        try:
+            grant_state = load_grant_state(
+                self.storage.shared_knowledge_grant_state(self.shared_knowledge_family_id),
+                family_id=self.shared_knowledge_family_id,
+            )
+            decision = evaluate_access(
+                grant_state,
+                ecosystem_id=self.storage.ecosystem_id,
+                agent_id=self.agent_id,
+                access_profile=self.shared_knowledge_access_profile,
+                max_age_sec=self.shared_knowledge_grant_max_age_sec,
+            )
+        except Exception as exc:
+            audits.append({
+                "event_type": "shared_knowledge.retrieval_denied",
+                "payload": {
+                    "family_id": self.shared_knowledge_family_id,
+                    "access_profile": self.shared_knowledge_access_profile,
+                    "reason": f"grant_state_error:{type(exc).__name__}",
+                },
+            })
+            return [], audits
+
+        if not decision.allowed:
+            audits.append({
+                "event_type": "shared_knowledge.retrieval_denied",
+                "payload": {
+                    "family_id": self.shared_knowledge_family_id,
+                    "access_profile": self.shared_knowledge_access_profile,
+                    "reason": decision.reason,
+                },
+            })
+            return [], audits
+
+        audits.append({
+            "event_type": "shared_knowledge.retrieval_allowed",
+            "payload": {
+                "family_id": self.shared_knowledge_family_id,
+                "access_profile": self.shared_knowledge_access_profile,
+                "grant_version": decision.grant_version,
+                "grants_hash": decision.grants_hash,
+                "reason": decision.reason,
+                "query_preview": query_text[:280],
+            },
+        })
+
+        try:
+            result = store.query(
+                collection=self.shared_knowledge_collection,
+                query_text=query_text,
+                embedder=embedder,
+                n_results=self.shared_knowledge_n_results,
+                where={
+                    "family_id": self.shared_knowledge_family_id,
+                    "visibility": "promoted",
+                },
+                min_relevance=self.shared_knowledge_min_relevance,
+            )
+        except Exception as exc:
+            logger.warning("Shared knowledge query failed: %s", exc)
+            return [], audits
+
+        context_entries: list[dict] = []
+        used_ids: list[str] = []
+        for doc_id, document, metadata, distance in zip(
+            result.ids, result.documents, result.metadatas, result.distances
+        ):
+            used_ids.append(doc_id)
+            context_entries.append({
+                "id": doc_id,
+                "text": document[:2000],
+                "relevance": round(1.0 - distance, 4),
+                "action": metadata.get("action", ""),
+                "agent_id": "",
+                "source_type": "shared_knowledge",
+                "family_id": self.shared_knowledge_family_id,
+            })
+
+        if used_ids:
+            audits.append({
+                "event_type": "shared_knowledge.context_used",
+                "payload": {
+                    "family_id": self.shared_knowledge_family_id,
+                    "access_profile": self.shared_knowledge_access_profile,
+                    "grant_version": decision.grant_version,
+                    "grants_hash": decision.grants_hash,
+                    "result_count": len(used_ids),
+                    "promotion_ids": used_ids,
+                },
+            })
+        return context_entries, audits
 
     @staticmethod
     def _build_rag_query(

@@ -19,6 +19,7 @@ from core.verifier import verify_chain
 from core.writer import ChainCorruptionError, ChainWriter
 from infra.env import load_env
 from infra.llm_client import LLMError
+from infra.shared_knowledge import validate_family_id
 from infra.storage import EcosystemStorage, FirewallError
 from safety.kill_switch import KillSwitchMonitor
 from schemas.events import ActionVocabulary, EventEnvelope
@@ -303,6 +304,7 @@ def _validate_run_config_modes(config: dict[str, object]) -> None:
         "enable_peer_context",
         "enable_forum_digest",
         "enable_rag_retrieval",
+        "enable_shared_knowledge_retrieval",
         "emit_latent_reasoning_events",
         "enable_pi_reason_then_action",
     ):
@@ -319,13 +321,46 @@ def _validate_run_config_modes(config: dict[str, object]) -> None:
         "memory_recent_events_cap",
         "memory_recent_notebook_cap",
         "notebook_consolidation_interval",
+        "rag_n_results",
+        "shared_knowledge_n_results",
+        "shared_knowledge_grant_max_age_sec",
     ):
         raw = config.get(int_key)
         if raw is not None:
+            if isinstance(raw, bool):
+                raise ValueError(f"run_config '{int_key}' must be an integer, got bool: {raw!r}")
             val = int(raw)
             if val < 0:
                 raise ValueError(f"run_config '{int_key}' must be non-negative, got {val}")
             config[int_key] = val
+
+    for positive_key in ("rag_n_results", "shared_knowledge_n_results"):
+        if positive_key in config and int(config[positive_key]) <= 0:
+            raise ValueError(f"run_config '{positive_key}' must be > 0")
+
+    for float_key in ("rag_min_relevance", "shared_knowledge_min_relevance"):
+        raw = config.get(float_key)
+        if raw is not None:
+            if isinstance(raw, bool):
+                raise ValueError(f"run_config '{float_key}' must be a float, got bool: {raw!r}")
+            val = float(raw)
+            if not (0.0 <= val <= 1.0):
+                raise ValueError(f"run_config '{float_key}' must be within [0.0, 1.0], got {val}")
+            config[float_key] = val
+
+    if bool(config.get("enable_shared_knowledge_retrieval", False)):
+        family_id = str(config.get("shared_knowledge_family_id", "")).strip()
+        if not family_id:
+            raise ValueError(
+                "run_config 'shared_knowledge_family_id' is required when enable_shared_knowledge_retrieval=true"
+            )
+        config["shared_knowledge_family_id"] = validate_family_id(family_id)
+        access_profile = str(config.get("shared_knowledge_access_profile", "")).strip()
+        if not access_profile:
+            raise ValueError(
+                "run_config 'shared_knowledge_access_profile' is required when enable_shared_knowledge_retrieval=true"
+            )
+        config["shared_knowledge_access_profile"] = access_profile
 
     raw_ob = config.get("openai_base_url")
     if raw_ob is not None:
@@ -603,6 +638,12 @@ def _run_inner(
     enable_forum_digest = False
     forum_digest_cap = 0
     memory_context_total_cap = 0
+    enable_shared_knowledge_retrieval = False
+    shared_knowledge_family_id: str | None = None
+    shared_knowledge_access_profile = "default"
+    shared_knowledge_n_results = 5
+    shared_knowledge_min_relevance = 0.3
+    shared_knowledge_grant_max_age_sec = 86400
     if run_config is not None:
         recent_events_cap = int(run_config.get("memory_recent_events_cap", recent_events_cap))
         recent_notebook_cap = int(run_config.get("memory_recent_notebook_cap", recent_notebook_cap))
@@ -614,6 +655,19 @@ def _run_inner(
         enable_forum_digest = bool(run_config.get("enable_forum_digest", False))
         forum_digest_cap = int(run_config.get("forum_digest_cap", 0))
         memory_context_total_cap = int(run_config.get("memory_context_total_cap", 0))
+        enable_shared_knowledge_retrieval = bool(run_config.get("enable_shared_knowledge_retrieval", False))
+        family_value = run_config.get("shared_knowledge_family_id")
+        shared_knowledge_family_id = str(family_value) if family_value is not None else None
+        shared_knowledge_access_profile = str(
+            run_config.get("shared_knowledge_access_profile", shared_knowledge_access_profile)
+        )
+        shared_knowledge_n_results = int(run_config.get("shared_knowledge_n_results", shared_knowledge_n_results))
+        shared_knowledge_min_relevance = float(
+            run_config.get("shared_knowledge_min_relevance", shared_knowledge_min_relevance)
+        )
+        shared_knowledge_grant_max_age_sec = int(
+            run_config.get("shared_knowledge_grant_max_age_sec", shared_knowledge_grant_max_age_sec)
+        )
     state_builder = StateBuilder(
         storage,
         agent_id,
@@ -628,6 +682,12 @@ def _run_inner(
         enable_forum_digest=enable_forum_digest,
         forum_digest_cap=forum_digest_cap,
         memory_context_total_cap=memory_context_total_cap,
+        enable_shared_knowledge_retrieval=enable_shared_knowledge_retrieval,
+        shared_knowledge_family_id=shared_knowledge_family_id,
+        shared_knowledge_access_profile=shared_knowledge_access_profile,
+        shared_knowledge_n_results=shared_knowledge_n_results,
+        shared_knowledge_min_relevance=shared_knowledge_min_relevance,
+        shared_knowledge_grant_max_age_sec=shared_knowledge_grant_max_age_sec,
     )
     executor = Executor(
         llm=llm,

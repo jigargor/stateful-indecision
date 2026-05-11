@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 from core.timestamps import wall_utc
+from infra.shared_knowledge import validate_family_id
 
 _ECOSYSTEM_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
 
@@ -108,6 +109,26 @@ class EcosystemStorage:
 
     def townhall_ledger(self) -> Path:
         return self.resolve("townhall.jsonl")
+
+    def shared_knowledge_family_dir(self, family_id: str) -> Path:
+        safe_family = validate_family_id(family_id)
+        shared_dir = (self.base_dir / "shared_knowledge" / safe_family).resolve()
+        if not str(shared_dir).startswith(str(self.base_dir) + os.sep):
+            raise FirewallError("shared knowledge path outside base_dir")
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        return shared_dir
+
+    def shared_knowledge_candidates(self, family_id: str) -> Path:
+        return self.shared_knowledge_family_dir(family_id) / "candidates.jsonl"
+
+    def shared_knowledge_promoted(self, family_id: str) -> Path:
+        return self.shared_knowledge_family_dir(family_id) / "promoted.jsonl"
+
+    def shared_knowledge_grant_ledger(self, family_id: str) -> Path:
+        return self.shared_knowledge_family_dir(family_id) / "grant_ledger.jsonl"
+
+    def shared_knowledge_grant_state(self, family_id: str) -> Path:
+        return self.shared_knowledge_family_dir(family_id) / "grant_state.json"
 
     @contextmanager
     def acquire_run_lock(self, agent_id: str) -> Iterator[None]:
