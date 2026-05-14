@@ -1,0 +1,8 @@
+[
+  "inter_agent_messaging_design",
+  "intra_team_handoff_protocols",
+  "ledger_observability_and_metrics",
+  "roundtable_and_commons_effectiveness",
+  "context_window_and_digest_tradeoffs",
+  "parallel_multi_agent_run_coordination"
+]
